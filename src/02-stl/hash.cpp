@@ -9,7 +9,7 @@ struct Person{
     }
 };
 namespace std{
-    template<>
+    template<>//全特化
     struct hash<Person>{
        size_t operator()(const Person&p)const{
             return hash<string>()(p.name_)^hash<size_t>()(p.age_);

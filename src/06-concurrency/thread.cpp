@@ -25,7 +25,7 @@ void worker(std::shared_ptr<Task>ptr){
 void test(){
     int count1(0);
     int count2(0);
-    std::shared_ptr<Task>ptr=std::make_shared<Task>();
+    std::shared_ptr<Task> ptr=std::make_shared<Task>();
     std::thread t1(worker,ptr);
     std::thread t2(worker,ptr);
     count1=ptr.use_count();
