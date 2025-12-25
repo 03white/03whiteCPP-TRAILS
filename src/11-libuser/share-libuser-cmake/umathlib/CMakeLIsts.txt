@@ -1,0 +1,14 @@
+project(umathlib-share)
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/build/bin)
+add_executable(${PROJECT_NAME} main.cpp)
+# 添加 cmathlib 头文件路径
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# 链接本地 lib 目录的导入库
+target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+target_link_libraries(${PROJECT_NAME} PRIVATE cmathlib-share)
+# exe 构建后，自动复制 DLL 到 exe 同级目录
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/lib/libcmathlib-share.dll"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/"
+)
