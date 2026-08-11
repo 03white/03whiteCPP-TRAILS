@@ -11,8 +11,7 @@ g++ -c file1.cpp file2.cpp file3.cpp
 # 2. 将目标文件打包成静态库
 ar rcs libmylib.a file1.o file2.o file3.o
 ```
-> [Tips]
-ar rcs libmylib.a file1.o file2.o fil3.o的意思是archive（归档）
+> ar rcs libmylib.a file1.o file2.o fil3.o的意思是archive（归档）
 ##### 2.1.1.2 g++编译时链接静态库
 ###### 2.1.1.2.1 直接指定链接法
 直接指定库的位置和名字来链接，不用-L搜索库的所在路径
@@ -107,8 +106,7 @@ g++ main1.cpp -o main1.exe
 ```
 *注意：使用显示链接的时候，需要解除函数的名称修饰（使用extern"C"，不然我们在GetProcAddress(dll,"add')的时候，"add"这个名字会找不到，因为会被修饰*
 ![alt text](image.png)
-> [Tips]
-nm xxx.dll 命令是查看.dll的符号信息；
+> nm xxx.dll 命令是查看.dll的符号信息；
 
 学一个小指令：
 ```shell
