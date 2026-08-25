@@ -1,3 +1,5 @@
 project(03-callback)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/bin)
 add_executable(${PROJECT_NAME} function.cpp)
+add_subdirectory(03-01-sync)
+add_subdirectory(03-02-async)
