@@ -12,7 +12,7 @@ public:
     Parent::function();
   }
 };
-void doTest(){
-    Child c;
-    c.function();
+int main(){
+  
+  return 0;
 }
