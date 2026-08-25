@@ -1,3 +1,3 @@
 project(02-stl)
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/build/bin)
-add_executable(${PROJECT_NAME} hash.cpp)
+add_subdirectory(02-01-mySTL)
+add_subdirectory(02-02-stl_using)
