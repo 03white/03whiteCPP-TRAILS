@@ -1,2 +1,5 @@
 */build/
 build/
+
+# Visual Studio 本地缓存/IntelliSense 数据库，几百 MB 且完全可重建
+.vs/

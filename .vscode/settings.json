@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "D:/Pragram/C++/03whiteText/cpp_trail/src/01-ptr"
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.errorSquiggles": "Disabled",
+    "C_Cpp.autocomplete": "Disabled"
 }
