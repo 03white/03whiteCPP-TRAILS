@@ -1,3 +1,6 @@
 project(12-net)
 add_subdirectory(12-01-curl)
 add_subdirectory(12-02-winsock-http)
+add_subdirectory(12-03-easy)
+add_subdirectory(12-04-probe)
+add_subdirectory(12-05-resume)
