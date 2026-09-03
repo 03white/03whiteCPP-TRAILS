@@ -1,0 +1,7 @@
+# clangd 的编译数据库位置。
+# CMake 把 compile_commands.json 生成在 build/<preset>/ 下，而 clangd 只会自动搜索
+# 「当前文件的各级祖先目录」以及它们各自的 build/ 子目录 —— 找不到再深一层的
+# build/msvc-debug/，所以必须在这里显式指出。
+# 换用 mingw 工具链调试时把下面这行改成 build/mingw-debug。
+CompileFlags:
+  CompilationDatabase: build/msvc-debug
