@@ -3,3 +3,6 @@ build/
 
 # Visual Studio 本地缓存/IntelliSense 数据库，几百 MB 且完全可重建
 .vs/
+
+# CLion / JetBrains 本地工程配置，同样可重建
+.idea/
