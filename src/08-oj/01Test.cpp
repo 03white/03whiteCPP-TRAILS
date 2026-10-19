@@ -16,24 +16,21 @@ using namespace std;
 例子说明：
 花200，需要找零824块，找12个64元硬币，3个16元硬币，2个4元硬币即可。
 */
-std::array<int, 4> coins = { 64, 16, 4, 1 };
+std::array<int, 4> coins = {64, 16, 4, 1};
 int coinChange(int rest, int idx) {
-    if (rest > coins[idx])
-    {
+    if (rest > coins[idx]) {
         rest -= coins[idx];
         return 1 + coinChange(rest, idx);
-    }
-    else if (rest > 0)
-    {
-    return coinChange(rest, + idx);
+    } else if (rest > 0) {
+        return coinChange(rest, +idx);
     }
     return 1;
 }
 
-int main(){
+int main() {
     int n;
-    cin >>n;
+    cin >> n;
     int ans = coinChange(1024 - n, 0);
-    cout<<ans<<endl;
+    cout << ans << endl;
     return 0;
 }

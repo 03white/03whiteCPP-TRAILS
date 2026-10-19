@@ -1,6 +1,6 @@
 project(12-fmt)
 
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/build/bin)
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/bin)
 
 # 这里原本硬编码了 D:/tools/vcpkg 的 toolchain、fmt_DIR 和 x64-mingw-dynamic
 # 的 DLL 路径。三个问题：

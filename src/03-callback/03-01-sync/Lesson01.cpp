@@ -1,12 +1,12 @@
-#include<iostream>
-#include<string>
-#include<functional>
-struct UserInfo{
+#include <iostream>
+#include <string>
+#include <functional>
+struct UserInfo {
     std::string username_;
     std::string email_;
 };
-using SuccessCallback=std::function<void(const UserInfo&)>;
-using FailureCallback =std::function<void(const std::string&)>;
+using SuccessCallback = std::function<void(const UserInfo&)>;
+using FailureCallback = std::function<void(const std::string&)>;
 
 class Authenticator {
 public:
@@ -50,20 +50,23 @@ int main() {
     std::cout << "Enter password: ";
     std::cin >> password;
     // Using lambda functions for callbacks
-    auth.login(username, password, [](const UserInfo& user) {
-        std::cout << "Login successful! Welcome, " << user.username_
-                  << std::endl;}, [](const std::string& error) {
+    auth.login(
+        username,
+        password,
+        [](const UserInfo& user) {
+            std::cout << "Login successful! Welcome, " << user.username_
+                      << std::endl;
+        },
+        [](const std::string& error) {
             std::cout << "Login failed: " << error << std::endl;
         });
     // Using member functions of Log class for callbacks
     Log logger;
-    auth.login(username, password, 
-               [&logger](const UserInfo& user) {
-                   logger.logSuccess(user);
-               },
-               [&logger](const std::string& error) {
-                   logger.logFailure(error);
-               });
+    auth.login(
+        username,
+        password,
+        [&logger](const UserInfo& user) { logger.logSuccess(user); },
+        [&logger](const std::string& error) { logger.logFailure(error); });
     // Using std::bind for callbacks
     auth.login(username,
                password,

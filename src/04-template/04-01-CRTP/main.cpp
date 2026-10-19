@@ -1,7 +1,7 @@
 #include "CRTP.hpp"
-int main(){
+int main() {
     Circle c(5);
-    Rectangle r(3,4);
+    Rectangle r(3, 4);
     process<Circle>(c);
     process<Rectangle>(r);
 }

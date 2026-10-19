@@ -1,7 +1,14 @@
 project(cmathlib-share)
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/build/lib)
+
+set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/lib)
+
 add_library(${PROJECT_NAME} SHARED math.cpp)
-# 当构建 DLL 时在编译器预处理器中定义 BUILD_DLL，使 MATH_API 成为 __declspec(dllexport)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+
+# 构建 DLL 时定义 BUILD_DLL，让 math.h 里的 MATH_API 展开成 __declspec(dllexport)；
+# 使用方没有这个宏，展开成 dllimport。PRIVATE 是关键：这个宏只能在编译这个库
+# 自己时生效，传播给使用方就把导入写成导出了。
 target_compile_definitions(${PROJECT_NAME} PRIVATE BUILD_DLL)
-# 可选：导出头文件搜索路径
-# target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# 这里没有 target_include_directories：umathlib 手抄了一份 include/math.h，
+# 刻意模拟「拿到别人的头 + 二进制库」的场景，不走 CMake 的依赖传播。

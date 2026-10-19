@@ -26,14 +26,17 @@ public:
                   << " logged in successfully." << std::endl;
     }
     void handleFailure(const std::string& error) {
-    std::cout << hint_ << "Login failed with error : " << error << std::endl;
+        std::cout << hint_ << "Login failed with error : " << error
+                  << std::endl;
     }
+
 private:
     const std::string hint_ = "Log: ";
 };
 class Authenticator {
-using SuccessCallback = std::function<void(const UserInfo&)>;
-using FailureCallback = std::function<void(const std::string&)>;
+    using SuccessCallback = std::function<void(const UserInfo&)>;
+    using FailureCallback = std::function<void(const std::string&)>;
+
 public:
     void login(const std::string& name, const std::string& password) const {
         if (name == name_ && password == password_) {
@@ -49,6 +52,7 @@ public:
     void addFailureCallback(FailureCallback callback) {
         failureCallbacks_.push_back(std::move(callback));
     }
+
 private:
     void notifySuccess(const UserInfo& user) const {
         for (const auto& callback : successCallbacks_) {
@@ -82,7 +86,8 @@ int main() {
     });
     auth.addSuccessCallback(
         [&logger](const UserInfo& user) { logger.handleSuccess(user); });
-    auth.addFailureCallback(std::bind(&Log::handleFailure, &logger, std::placeholders::_1));
+    auth.addFailureCallback(
+        std::bind(&Log::handleFailure, &logger, std::placeholders::_1));
     auth.login(username, password);
     return 0;
 }

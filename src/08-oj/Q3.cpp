@@ -5,18 +5,9 @@
 d d d d
 d d d d
 d d d d
-d d d d 
+d d d d
 判断，矩阵中有没有位置，我可以按照方向规则越过矩阵边界，第三题是一个Iterator类的设计题，玛德，没时间看了。
 */
-int main(){
-
-
-
-
-
-
-
-
-
+int main() {
     return 0;
 }

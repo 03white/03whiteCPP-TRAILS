@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.5)
+# 和 CMakePresets.json 里声明的 cmakeMinimumRequired 对齐。
+# 当前工具链是 CMake 4.x，对 3.5 这种老版本会发"兼容性即将被移除"的弃用警告。
+cmake_minimum_required(VERSION 3.21)
 project(cpp_trail)
 
 # 源文件统一 UTF-8 无 BOM。MSVC 默认按系统代码页(936/GBK)读源文件，

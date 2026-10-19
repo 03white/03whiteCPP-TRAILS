@@ -1,5 +1,5 @@
 #include <iostream>
-#include<vector>
+#include <vector>
 #include <string>
 #include <functional>
 /*
@@ -7,7 +7,7 @@
 1.在Authenticator内部维护一个观察者列表（可以存储抽象接口指针，也可以存储std::function对象）。
 2.提供registerObserver方法，让外部可以注册观察者。
 3.在login方法中，根据登录结果调用所有注册的观察者的回调方法。
-*/ 
+*/
 struct UserInfo {
     std::string username_;
     std::string email_;
@@ -15,7 +15,7 @@ struct UserInfo {
 using SuccessCallback = std::function<void(const UserInfo&)>;
 using FailureCallback = std::function<void(const std::string&)>;
 
-class LoginObserver{
+class LoginObserver {
 public:
     virtual void onSuccess(const UserInfo& user) = 0;
     virtual void onFailure(const std::string& error) = 0;
@@ -29,7 +29,6 @@ public:
     void onFailure(const std::string& error) override {
         std::cout << "Log: Login failed with error: " << error << std::endl;
     }
-
 };
 class UIObserver : public LoginObserver {
 public:
@@ -39,7 +38,6 @@ public:
     void onFailure(const std::string& error) override {
         std::cout << "UI: Login failed: " << error << std::endl;
     }
-
 };
 class NotificationObserver : public LoginObserver {
 public:
@@ -54,8 +52,7 @@ public:
 };
 class Authenticator {
 public:
-    void login(const std::string& name,
-               const std::string& password) const {
+    void login(const std::string& name, const std::string& password) const {
         if (name == name_ && password == password_) {
             UserInfo user{name_, name_ + "@example.com"};
             notifySuccess(user);
