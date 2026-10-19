@@ -14,25 +14,23 @@ GlobalCurlGuard::~GlobalCurlGuard() {
     curl_global_cleanup();
 }
 
-
 CurlSlist::~CurlSlist() {
     reset();
 }
 
 CurlSlist::CurlSlist(CurlSlist&& other) noexcept :
     list_(std::exchange(other.list_, nullptr)) {
-
 }
 
 CurlSlist& CurlSlist::operator=(CurlSlist&& other) noexcept {
     if (this != &other) {
         reset();
-        list_=std::exchange(other.list_, nullptr);
+        list_ = std::exchange(other.list_, nullptr);
     }
     return *this;
 }
 void CurlSlist::append(const std::string& header) {
-    auto newList_=curl_slist_append(list_, header.c_str());
+    auto newList_ = curl_slist_append(list_, header.c_str());
     if (!newList_) {
         throw std::bad_alloc{};
     }
@@ -46,15 +44,15 @@ void CurlSlist::reset() noexcept {
     }
 }
 
-
-CurlEasy::CurlEasy():handle_(curl_easy_init()){
+CurlEasy::CurlEasy() : handle_(curl_easy_init()) {
     if (!handle_) {
         throw std::runtime_error("curl_easy_init failed");
     }
 }
 
 void CurlEasy::throw_setopt_failed(CURLcode code) {
-    throw std::runtime_error("curl_easy_setopt failed：" + std::string(curl_easy_strerror(code)));
+    throw std::runtime_error("curl_easy_setopt failed："
+                             + std::string(curl_easy_strerror(code)));
 }
 
 CURLcode CurlEasy::perform() noexcept {

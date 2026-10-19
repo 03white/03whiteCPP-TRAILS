@@ -13,8 +13,10 @@ std::string ResponseHeaders::to_lower(std::string s) {
 std::string ResponseHeaders::trim(const std::string& s) {
     std::size_t b = 0;
     std::size_t e = s.size();
-    while (b < e && std::isspace(static_cast<unsigned char>(s[b]))) ++b;
-    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) --e;
+    while (b < e && std::isspace(static_cast<unsigned char>(s[b])))
+        ++b;
+    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1])))
+        --e;
     return s.substr(b, e - b);
 }
 
@@ -32,11 +34,12 @@ void ResponseHeaders::add_line(const char* data, std::size_t size) {
         const auto sp = line.find(' ');
         if (sp != std::string::npos) {
             std::size_t i = sp;
-            while (i < line.size() && line[i] == ' ') ++i;
+            while (i < line.size() && line[i] == ' ')
+                ++i;
             int code = 0;
             int digits = 0;
-            while (i < line.size() && digits < 3 &&
-                   std::isdigit(static_cast<unsigned char>(line[i]))) {
+            while (i < line.size() && digits < 3
+                   && std::isdigit(static_cast<unsigned char>(line[i]))) {
                 code = code * 10 + (line[i] - '0');
                 ++i;
                 ++digits;
@@ -55,7 +58,8 @@ void ResponseHeaders::add_line(const char* data, std::size_t size) {
     if (colon == std::string::npos) {
         // 没有冒号只剩两种可能：obs-fold 续行（以空白开头，RFC 9110 已废弃，
         // 且 libcurl 不会主动折叠），或者服务端发的垃圾。两者都丢掉。
-        // 想留 obs-fold 支持的话，在这里把内容 append 到 entries_.back().second。
+        // 想留 obs-fold 支持的话，在这里把内容 append 到
+        // entries_.back().second。
         return;
     }
 
@@ -81,7 +85,8 @@ std::optional<std::string> ResponseHeaders::get(const std::string& name) const {
     return std::nullopt;
 }
 
-std::vector<std::string> ResponseHeaders::get_all(const std::string& name) const {
+std::vector<std::string>
+ResponseHeaders::get_all(const std::string& name) const {
     const std::string key = to_lower(name);
     std::vector<std::string> out;
     for (const auto& e : entries_) {
@@ -94,15 +99,18 @@ std::vector<std::string> ResponseHeaders::get_all(const std::string& name) const
 
 bool ResponseHeaders::has(const std::string& name) const {
     const std::string key = to_lower(name);
-    return std::any_of(entries_.begin(), entries_.end(),
+    return std::any_of(entries_.begin(),
+                       entries_.end(),
                        [&key](const Entry& e) { return e.first == key; });
 }
 
-std::size_t ResponseHeaders::curl_callback(char* buffer, std::size_t size,
-                                           std::size_t nitems, void* userdata) {
+std::size_t ResponseHeaders::curl_callback(char* buffer,
+                                           std::size_t size,
+                                           std::size_t nitems,
+                                           void* userdata) {
     const std::size_t total = size * nitems;
-    if(auto* self=static_cast<ResponseHeaders*>(userdata)){
-        self->addline(buffer,total);
+    if (auto* self = static_cast<ResponseHeaders*>(userdata)) {
+        self->addline(buffer, total);
     }
     return total;
 }

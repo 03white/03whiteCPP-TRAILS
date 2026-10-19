@@ -1,5 +1,6 @@
-#include"downloader.h"
-void Downloader::load(const std::string target_url, const std::string local_url) {
+#include "downloader.h"
+void Downloader::load(const std::string target_url,
+                      const std::string local_url) {
     this->target_url = target_url;
     this->local_url = local_url;
     std::error_code ec;
@@ -10,7 +11,6 @@ void Downloader::load(const std::string target_url, const std::string local_url)
         this->downloaded_size = static_cast<size_t>(file_size);
     }
     std::cout << "[DEBUG] downloaded_size = " << downloaded_size << std::endl;
-
 
     this->output_file.open(local_url, std::ios::binary | std::ios::app);
     if (!output_file.is_open()) {
@@ -44,7 +44,8 @@ void Downloader::load(const std::string target_url, const std::string local_url)
     }
 }
 
-size_t Downloader::write_triple(void* ptr, size_t size, size_t nmemb, void* stream) {
+size_t
+Downloader::write_triple(void* ptr, size_t size, size_t nmemb, void* stream) {
     auto* self = static_cast<Downloader*>(stream);
     self->write_callback(ptr, size * nmemb);
     return size * nmemb;
@@ -55,16 +56,15 @@ void Downloader::write_callback(void* ptr, size_t size) {
 }
 
 int Downloader::progress_triple(void* clientp,
-    curl_off_t dltotal,
-    curl_off_t dlnow,
-    curl_off_t ultotal,
-    curl_off_t ulnow)
-{
+                                curl_off_t dltotal,
+                                curl_off_t dlnow,
+                                curl_off_t ultotal,
+                                curl_off_t ulnow) {
     auto* self = static_cast<Downloader*>(clientp);
     self->progress_callback(dltotal, dlnow);
     return 0;
 }
 int Downloader::progress_callback(curl_off_t dltotal, curl_off_t dlnow) {
-    this->callback(dltotal+downloaded_size, dlnow+downloaded_size);
+    this->callback(dltotal + downloaded_size, dlnow + downloaded_size);
     return 0;
 }

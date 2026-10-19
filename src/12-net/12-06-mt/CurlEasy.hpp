@@ -12,10 +12,10 @@ public:
     GlobalCurlGuard();
     ~GlobalCurlGuard();
 
-    GlobalCurlGuard(const GlobalCurlGuard&)            = delete;
+    GlobalCurlGuard(const GlobalCurlGuard&) = delete;
     GlobalCurlGuard& operator=(const GlobalCurlGuard&) = delete;
-    GlobalCurlGuard(GlobalCurlGuard&&)                 = delete;
-    GlobalCurlGuard& operator=(GlobalCurlGuard&&)      = delete;
+    GlobalCurlGuard(GlobalCurlGuard&&) = delete;
+    GlobalCurlGuard& operator=(GlobalCurlGuard&&) = delete;
 };
 
 // curl_slist 的 RAII 包装。加自定义请求头（Range: bytes=0-0 等）时用。
@@ -25,13 +25,15 @@ public:
     CurlSlist() = default;
     ~CurlSlist();
 
-    CurlSlist(const CurlSlist&)            = delete;
+    CurlSlist(const CurlSlist&) = delete;
     CurlSlist& operator=(const CurlSlist&) = delete;
     CurlSlist(CurlSlist&& other) noexcept;
     CurlSlist& operator=(CurlSlist&& other) noexcept;
 
-    void append(const std::string& header);   // 形如 "Range: bytes=0-0"
-    curl_slist* get() const noexcept { return list_; }
+    void append(const std::string& header); // 形如 "Range: bytes=0-0"
+    curl_slist* get() const noexcept {
+        return list_;
+    }
     void reset() noexcept;
 
 private:
@@ -42,12 +44,14 @@ class CurlEasy {
 public:
     CurlEasy();
     ~CurlEasy() = default;
-    CurlEasy(const CurlEasy&)            = delete;
+    CurlEasy(const CurlEasy&) = delete;
     CurlEasy& operator=(const CurlEasy&) = delete;
-    CurlEasy(CurlEasy&&)                 = default;
-    CurlEasy& operator=(CurlEasy&&)      = default;
+    CurlEasy(CurlEasy&&) = default;
+    CurlEasy& operator=(CurlEasy&&) = default;
 
-    CURL* get() const noexcept { return handle_.get(); }
+    CURL* get() const noexcept {
+        return handle_.get();
+    }
     template <typename T>
     void setopt(CURLoption option, T value) {
         CURLcode code = curl_easy_setopt(handle_.get(), option, value);
@@ -57,6 +61,7 @@ public:
     }
     CURLcode perform() noexcept;
     void reset() noexcept;
+
 private:
     struct Deleter {
         void operator()(CURL* handle) const noexcept {

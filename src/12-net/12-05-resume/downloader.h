@@ -1,17 +1,19 @@
-#include"CurlEasy.hpp"
-#include<fstream>
+#include "CurlEasy.hpp"
+#include <fstream>
 #include <filesystem>
-#include<iostream>
-#include<functional>
-class Downloader{
-    using ProgressCallback=std::function<void(size_t total, size_t now)>;
+#include <iostream>
+#include <functional>
+class Downloader {
+    using ProgressCallback = std::function<void(size_t total, size_t now)>;
+
 public:
     void setProgressCallback(ProgressCallback callback) {
         this->callback = std::move(callback);
     }
-    void load(const std::string target_url,const std::string local_url);
-    static size_t write_triple(void*ptr,size_t size,size_t nmemb,void*stream);
-    void write_callback(void*ptr,size_t size);
+    void load(const std::string target_url, const std::string local_url);
+    static size_t
+    write_triple(void* ptr, size_t size, size_t nmemb, void* stream);
+    void write_callback(void* ptr, size_t size);
     static int progress_triple(void* clientp,
                                curl_off_t dltotal,
                                curl_off_t dlnow,

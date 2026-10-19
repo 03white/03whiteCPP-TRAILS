@@ -2,18 +2,13 @@
 
 #include "ContentRange.hpp"
 
-std::uint64_t ContentRange::length() const noexcept
-{
+std::uint64_t ContentRange::length() const noexcept {
     return last - first + 1;
 }
 
-bool ContentRange::matches(
-    std::uint64_t expect_first,
-    std::uint64_t expect_last
-) const noexcept
-{
-    return first == expect_first &&
-           last == expect_last;
+bool ContentRange::matches(std::uint64_t expect_first,
+                           std::uint64_t expect_last) const noexcept {
+    return first == expect_first && last == expect_last;
 }
 
 std::optional<ContentRange> ContentRange::parse(const std::string& value) {
@@ -49,8 +44,7 @@ std::optional<ContentRange> ContentRange::parse(const std::string& value) {
     return result;
 }
 
-std::string ContentRange::to_string() const
-{
+std::string ContentRange::to_string() const {
     std::string result = "bytes ";
 
     result += std::to_string(first);
@@ -58,12 +52,9 @@ std::string ContentRange::to_string() const
     result += std::to_string(last);
     result += "/";
 
-    if (total.has_value())
-    {
+    if (total.has_value()) {
         result += std::to_string(*total);
-    }
-    else
-    {
+    } else {
         result += "*";
     }
 

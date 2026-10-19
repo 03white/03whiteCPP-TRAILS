@@ -9,16 +9,14 @@
 #include <system_error>
 #endif
 MultiDownLoader::MultiDownLoader(const std::string& target,
-                       const std::string& local,
-                       size_t blockNum) 
-                    :target_url(target)
-                    ,local_url(local)
-                    ,blockNum(blockNum) {
-    
+                                 const std::string& local,
+                                 size_t blockNum) :
+    target_url(target), local_url(local), blockNum(blockNum) {
 }
 
 void MultiDownLoader::start() {
     this->initTotalSize();
+    progress.total_size = total_size; // 设置总大小
     this->preallocate_file();
     loaders.reserve(blockNum); // 预留，避免重新分配
     threads.reserve(blockNum);
@@ -31,13 +29,13 @@ void MultiDownLoader::start() {
         if (start > end)
             break;
         loaders.push_back(std::make_unique<SingleDownloader>(
-            target_url, local_url, start, end));
+            target_url, local_url, start, end, &this->progress));
     }
 
     for (size_t i = 0; i < loaders.size(); ++i) {
-        threads.emplace_back([this, i] { this->results[i] = this->loaders[i]->run(); });
+        threads.emplace_back(
+            [this, i] { this->results[i] = this->loaders[i]->run(); });
     }
-
 }
 
 void MultiDownLoader::wait() {
@@ -45,6 +43,51 @@ void MultiDownLoader::wait() {
         if (t.joinable())
             t.join();
     }
+    for (size_t i = 0; i < results.size(); ++i) {
+        if (results[i] != CURLE_OK) {
+            throw std::runtime_error("Block " + std::to_string(i)
+                                     + " failed, CURLcode="
+                                     + std::to_string(results[i]));
+        }
+    }
+
+    if (this->sha256sum.empty()) {
+        std::cout << "No SHA256 checksum provided by the server." << std::endl;
+        return;
+    }
+
+    std::ifstream ifs(local_url, std::ios::binary);
+    if (!ifs) {
+        throw std::runtime_error("Cannot open file for SHA256: " + local_url);
+    }
+    std::vector<char> data((std::istreambuf_iterator<char>(ifs)),
+                           std::istreambuf_iterator<char>());
+
+    EVP evp;
+    evp.init(EVP_sha256());
+    evp.update(data.data(), data.size());
+
+    unsigned char digest[EVP_MAX_MD_SIZE]{};
+    unsigned int digest_len = 0;
+    evp.final(digest, digest_len);
+    static const char* hex = "0123456789abcdef";
+    std::string computed;
+    computed.reserve(digest_len * 2);
+    for (unsigned int i = 0; i < digest_len; ++i) {
+        computed.push_back(hex[digest[i] >> 4]);
+        computed.push_back(hex[digest[i] & 0xF]);
+    }
+    std::string expected = this->sha256sum;
+    std::transform(expected.begin(),
+                   expected.end(),
+                   expected.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    if (computed != expected) {
+        throw std::runtime_error("SHA256 checksum mismatch: got " + computed
+                                 + ", expected " + expected);
+    }
+    std::cout << "SHA256 checksum verified successfully." << std::endl;
 }
 
 void MultiDownLoader::initTotalSize() {
@@ -66,9 +109,9 @@ void MultiDownLoader::preallocate_file() {
 #if defined(_WIN32)
     HANDLE h = ::CreateFileA(local_url.c_str(),
                              GENERIC_WRITE,
-                             0, 
+                             0,
                              nullptr,
-                             CREATE_ALWAYS, 
+                             CREATE_ALWAYS,
                              FILE_ATTRIBUTE_NORMAL,
                              nullptr);
 
@@ -93,7 +136,6 @@ void MultiDownLoader::preallocate_file() {
         throw std::system_error(
             err, std::system_category(), "SetEndOfFile failed: " + local_url);
     }
-
     ::CloseHandle(h);
 #else
     int fd = ::open(local_url.c_str(), O_WRONLY | O_CREAT, 0644);
@@ -114,39 +156,60 @@ void MultiDownLoader::preallocate_file() {
 #endif
 }
 
-size_t MultiDownLoader::header_triple(void* ptr, size_t size, size_t nmemb, void* stream) {
+size_t MultiDownLoader::header_triple(void* ptr,
+                                      size_t size,
+                                      size_t nmemb,
+                                      void* stream) {
     auto* self = static_cast<MultiDownLoader*>(stream);
     self->header_callback(ptr, size * nmemb);
-    return size * nmemb;    
+    return size * nmemb;
 }
 
 void MultiDownLoader::header_callback(void* ptr, size_t size) {
-    if (!ptr || size == 0) {
+    if (!ptr || size == 0)
         return;
-    }
+
     std::string line(static_cast<char*>(ptr), size);
-    while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
         line.pop_back();
-    };
-    std::string line_lower = line;
-    std::transform(line_lower.begin(),line_lower.end(),line_lower.begin(),
-                        [](unsigned char c){
-                        return std::tolower(c);});
-    const std::string prefix = "content-length:";
-    size_t pos = line_lower.find(prefix);
-    if (pos == std::string::npos) {
+
+    if (line.empty())
         return;
-    }
-    std::string value_str = line_lower.substr(pos + prefix.length());                      
-    size_t start = value_str.find_first_not_of(" \t");
-    size_t end = value_str.find_last_not_of(" \t");
-    if (start == std::string::npos) {
-        return; // 没有值
-    }
-    value_str = value_str.substr(start, end - start + 1);
-    try {
-        this->total_size = std::stoll(value_str);
-    } catch (const std::exception& e) {
+
+    std::string lower = line;
+    std::transform(lower.begin(),
+                   lower.end(),
+                   lower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    auto trim_value = [](const std::string& s, size_t from) -> std::string {
+        std::string v = s.substr(from);
+        size_t b = v.find_first_not_of(" \t");
+        if (b == std::string::npos)
+            return {};
+        size_t e = v.find_last_not_of(" \t");
+        return v.substr(b, e - b + 1);
+    };
+
+    static const std::string LenPrefix = "content-length:";
+    static const std::string DigestPrefix = "x-checksum-sha256:";
+
+    // ---- content-length ----
+    if (size_t pos = lower.find(LenPrefix); pos != std::string::npos) {
+        std::string v = trim_value(lower, pos + LenPrefix.size());
+        if (!v.empty()) {
+            try {
+                this->total_size = static_cast<size_t>(std::stoull(v));
+            } catch (const std::exception&) {}
+        }
+        return;
     }
 
+    // ---- x-checksum-sha256 ----
+    if (size_t pos = lower.find(DigestPrefix); pos != std::string::npos) {
+        std::string v = trim_value(lower, pos + DigestPrefix.size());
+        if (!v.empty())
+            this->sha256sum = v;
+        return;
+    }
 }

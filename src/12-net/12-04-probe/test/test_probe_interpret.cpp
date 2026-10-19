@@ -37,8 +37,8 @@ void test_probe_interpret() {
 
     // ---- TODO: interpret_range_get ----
     //
-    //   status  关键响应头                        返回  supports_range  total_size
-    //   206     Content-Range: bytes 0-0/1234     true  true            1234
+    //   status  关键响应头                        返回  supports_range
+    //   total_size 206     Content-Range: bytes 0-0/1234     true  true 1234
     //   206     Content-Range: bytes 0-0/*        true  true            none
     //   206     （无 Content-Range）              false false           none
     //   206     Content-Range: bytes 0-99/1234    false false           none
@@ -48,13 +48,13 @@ void test_probe_interpret() {
     //   200     Content-Length: -1                true  false           none
     //   200     Content-Length: abc               true  false           none
     //   200     （无 Content-Length）             true  false           none
-    //   200     CL:1234 + Accept-Ranges: bytes    true  false           1234   + notes 记矛盾
-    //   416     Content-Range: bytes */0          true  true            0
-    //   416     Content-Range: bytes */1234       true  true            1234
-    //   416     （无 Content-Range）              false false           none
-    //   405     —                                 false false           none
-    //   404     —                                 false false           none
-    //   500     —                                 false false           none
+    //   200     CL:1234 + Accept-Ranges: bytes    true  false           1234 +
+    //   notes 记矛盾 416     Content-Range: bytes */0          true  true 0 416
+    //   Content-Range: bytes */1234       true  true            1234 416 （无
+    //   Content-Range）              false false           none 405     — false
+    //   false           none 404     —                                 false
+    //   false           none 500     —                                 false
+    //   false           none
     //
     // 第 4 行（206 但给的区间不是 0-0）和第 8/9 行（畸形 Content-Length）
     // 是端到端测试**跑不到**的分支 —— probe_server.py 不会那么返回。
@@ -67,8 +67,8 @@ void test_probe_interpret() {
 
     // ---- TODO: interpret_head ----
     //
-    //   status  关键响应头                        返回  supports_range  total_size
-    //   200     Content-Length: 1234              true  false           1234
+    //   status  关键响应头                        返回  supports_range
+    //   total_size 200     Content-Length: 1234              true  false 1234
     //   200     Accept-Ranges: bytes + CL:1234    true  **false**       1234
     //   200     （无 Content-Length）             false false           none
     //   404     —                                 false false           none

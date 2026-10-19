@@ -57,18 +57,19 @@ void test_filename_resolver() {
     // ---- TODO: from_content_disposition —— RFC 5987 / 6266 ----
     //
     //   输入                                                     期望
-    //   "attachment"                                             none（无 filename）
-    //   "attachment; filename=a.bin"                             "a.bin"（无引号）
-    //   "attachment; filename=\"a.bin\""                         "a.bin"（去引号）
-    //   "inline; filename=\"a.bin\""                             "a.bin"（inline 也算）
+    //   "attachment"                                             none（无
+    //   filename） "attachment; filename=a.bin" "a.bin"（无引号） "attachment;
+    //   filename=\"a.bin\""                         "a.bin"（去引号） "inline;
+    //   filename=\"a.bin\""                             "a.bin"（inline 也算）
     //   "attachment; filename*=UTF-8''%E4%B8%AD.bin"             "中.bin"
     //   "attachment; filename=\"a\"; filename*=UTF-8''b"         "b"  ✔ 已示范
-    //   "attachment; filename*=UTF-8''b; filename=\"a\""         "b"（顺序无关！）
-    //   "attachment; FILENAME=\"a.bin\""                         "a.bin"（参数名不敏感）
-    //   "attachment; filename*=''x.bin"                          "x.bin"（charset 为空）
-    //   "attachment; filename*=UTF-8'zh-CN'%E4%B8%AD.bin"        "中.bin"（带 lang 段）
-    //   "attachment; filename*=broken"                           退回 filename 或 none
-    //   "attachment; filename=\"a;b.bin\""                       "a;b.bin"（引号内分号）
+    //   "attachment; filename*=UTF-8''b; filename=\"a\"" "b"（顺序无关！）
+    //   "attachment; FILENAME=\"a.bin\"" "a.bin"（参数名不敏感） "attachment;
+    //   filename*=''x.bin"                          "x.bin"（charset 为空）
+    //   "attachment; filename*=UTF-8'zh-CN'%E4%B8%AD.bin"        "中.bin"（带
+    //   lang 段） "attachment; filename*=broken"                           退回
+    //   filename 或 none "attachment; filename=\"a;b.bin\""
+    //   "a;b.bin"（引号内分号）
     //   ""                                                       none
     //
     //   "顺序无关" 那条值得单独测：很多实现是「边扫边覆盖」，
@@ -90,7 +91,8 @@ void test_filename_resolver() {
     //   "http://h/%E4%B8%AD.bin"          "中.bin"  percent-decode
     //   "http://user:pw@h/c.bin"          "c.bin"   userinfo 里有 @ 和 :
     //   ""                                none
-    //   "c.bin"                           none 还是 "c.bin"？ ← 你来定，写进用例
+    //   "c.bin"                           none 还是 "c.bin"？ ←
+    //   你来定，写进用例
     //
     //   "http://h" 那条是关键：如果你直接 rfind('/')，会取到 "//h" 里的斜杠，
     //   返回 "h" —— 把主机名当成文件名。

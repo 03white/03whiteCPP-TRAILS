@@ -25,37 +25,53 @@
 namespace check {
 
 // C++17 inline 变量：头文件里定义全局状态而不违反 ODR。
-inline int g_checks   = 0;
+inline int g_checks = 0;
 inline int g_failures = 0;
 
 // ---- 把值转成可打印的字符串 ----
 // 声明全部前置，因为 optional 的版本要调用其它版本。
-template <typename T> std::string show(const T& v);
+template <typename T>
+std::string show(const T& v);
 inline std::string show(bool b);
 inline std::string show(const std::string& s);
 inline std::string show(const char* s);
 inline std::string show(TransferMode m);
-template <typename T> std::string show(const std::optional<T>& o);
+template <typename T>
+std::string show(const std::optional<T>& o);
 
-template <typename T> std::string show(const T& v) {
+template <typename T>
+std::string show(const T& v) {
     if constexpr (std::is_enum_v<T>) {
         return std::to_string(static_cast<long long>(v));
     } else {
         return std::to_string(v);
     }
 }
-inline std::string show(bool b)                { return b ? "true" : "false"; }
-inline std::string show(const std::string& s)  { return "\"" + s + "\""; }
-inline std::string show(const char* s)         { return s ? ("\"" + std::string(s) + "\"") : "(null)"; }
-inline std::string show(TransferMode m)        { return to_string(m); }
+inline std::string show(bool b) {
+    return b ? "true" : "false";
+}
+inline std::string show(const std::string& s) {
+    return "\"" + s + "\"";
+}
+inline std::string show(const char* s) {
+    return s ? ("\"" + std::string(s) + "\"") : "(null)";
+}
+inline std::string show(TransferMode m) {
+    return to_string(m);
+}
 
-template <typename T> std::string show(const std::optional<T>& o) {
+template <typename T>
+std::string show(const std::optional<T>& o) {
     return o ? ("Some(" + show(*o) + ")") : "None";
 }
 
-inline void pass() { ++g_checks; }
+inline void pass() {
+    ++g_checks;
+}
 
-inline void fail(const char* file, int line, const std::string& expr,
+inline void fail(const char* file,
+                 int line,
+                 const std::string& expr,
                  const std::string& detail) {
     ++g_checks;
     ++g_failures;
@@ -72,7 +88,8 @@ inline void suite(const char* name) {
 }
 
 inline int summary() {
-    std::cout << "\n" << (g_checks - g_failures) << "/" << g_checks << " checks passed";
+    std::cout << "\n"
+              << (g_checks - g_failures) << "/" << g_checks << " checks passed";
     if (g_failures > 0) {
         std::cout << "  (" << g_failures << " FAILED)";
     }
@@ -80,7 +97,7 @@ inline int summary() {
     return g_failures == 0 ? 0 : 1;
 }
 
-}   // namespace check
+} // namespace check
 
 #define CHECK(cond)                                                            \
     do {                                                                       \
@@ -98,9 +115,10 @@ inline int summary() {
         if (a_ == e_) {                                                        \
             ::check::pass();                                                   \
         } else {                                                               \
-            ::check::fail(__FILE__, __LINE__,                                  \
+            ::check::fail(__FILE__,                                            \
+                          __LINE__,                                            \
                           "CHECK_EQ(" #actual ", " #expected ")",              \
-                          "got " + ::check::show(a_) +                         \
-                              ", want " + ::check::show(e_));                  \
+                          "got " + ::check::show(a_) + ", want "               \
+                              + ::check::show(e_));                            \
         }                                                                      \
     } while (false)

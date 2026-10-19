@@ -5,12 +5,12 @@ namespace {
 
 DownloadPlan plan_with(std::optional<std::uint64_t> size, bool range) {
     DownloadPlan p;
-    p.total_size     = size;
+    p.total_size = size;
     p.supports_range = range;
     return p;
 }
 
-}   // namespace
+} // namespace
 
 void test_decide_mode() {
     check::suite("Probe::decide_mode");
@@ -58,10 +58,12 @@ void test_decide_mode() {
     // Unknown 是 Probe::run() 在两枪都失败时**跳过** decide_mode 留下的初值。
     //
     // 这个区分很重要，写个注释级的用例把它记下来：
-    //   DownloadPlan{} 默认构造 -> decide_mode 返回 StreamingChunked，不是 Unknown
+    //   DownloadPlan{} 默认构造 -> decide_mode 返回 StreamingChunked，不是
+    //   Unknown
     //
     // 也就是说：光看 decide_mode 无法区分「这是流式接口」和「我没探出来」。
     // 那个区分只存在于 run() 的控制流里。这是个设计上的薄弱点 ——
     // 将来如果有人重构时把 run() 里那个 if 删了，测试抓不到。
-    // 想想怎么让它抓得到？（提示：给 run() 一个能注入假响应的入口，就是第二层重构）
+    // 想想怎么让它抓得到？（提示：给 run()
+    // 一个能注入假响应的入口，就是第二层重构）
 }

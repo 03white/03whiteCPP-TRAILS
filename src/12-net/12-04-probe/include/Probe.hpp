@@ -18,23 +18,33 @@
 #include <cstdint>
 #include <string>
 
-class CurlEasy;   // 前置声明，头文件不拖 curl/curl.h 进来
+class CurlEasy; // 前置声明，头文件不拖 curl/curl.h 进来
 
 class Probe {
 public:
     explicit Probe(ProbeContext ctx);
     DownloadPlan run();
-    const ProbeContext& context() const noexcept { return ctx_; }
+    const ProbeContext& context() const noexcept {
+        return ctx_;
+    }
     static TransferMode decide_mode(const DownloadPlan& plan) noexcept;
-private:
-    ProbeContext    ctx_;//输入参数
-    ResponseHeaders headers_;//回调填充的响应头
-    std::uint64_t   body_bytes_seen_ = 0; //响应体已经收到的字节数
-    static constexpr std::uint64_t kMaxProbeBody = 64 * 1024; //响应体最大允许接受字节数
 
-    static std::size_t discard_body(char* ptr, std::size_t size,std::size_t nmemb, void* userdata);
-    bool probe_range_get(CurlEasy& curl, DownloadPlan& plan); //利用curl进行第一次请求，结果存进plan
-    bool probe_head(CurlEasy& curl, DownloadPlan& plan);     //利用curl进行第二次请求，结果存进plan
-    void fill_common_fields(DownloadPlan& plan) const; //请求前填充公共头
-    void apply_common_options(CurlEasy& curl);  //设置回调前的选项
+private:
+    ProbeContext ctx_;                  // 输入参数
+    ResponseHeaders headers_;           // 回调填充的响应头
+    std::uint64_t body_bytes_seen_ = 0; // 响应体已经收到的字节数
+    static constexpr std::uint64_t kMaxProbeBody =
+        64 * 1024; // 响应体最大允许接受字节数
+
+    static std::size_t discard_body(char* ptr,
+                                    std::size_t size,
+                                    std::size_t nmemb,
+                                    void* userdata);
+    bool
+    probe_range_get(CurlEasy& curl,
+                    DownloadPlan& plan); // 利用curl进行第一次请求，结果存进plan
+    bool probe_head(CurlEasy& curl,
+                    DownloadPlan& plan); // 利用curl进行第二次请求，结果存进plan
+    void fill_common_fields(DownloadPlan& plan) const; // 请求前填充公共头
+    void apply_common_options(CurlEasy& curl);         // 设置回调前的选项
 };

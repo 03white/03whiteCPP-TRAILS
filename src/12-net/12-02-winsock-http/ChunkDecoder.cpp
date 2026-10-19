@@ -20,16 +20,17 @@ size_t ChunkDecoder::parse_chunk_size(const std::string& line) {
 
 void ChunkDecoder::feed(const char* data, size_t len, std::string& out) {
     buffer_.append(data, len);
-    
+
     while (true) {
         bool progressed = false;
         switch (state_) {
-            case State::Size:     progressed = consume_size_line(); break;
-            case State::Data:     progressed = consume_data(out);   break;
-            case State::Trailer:  progressed = consume_trailer_line(); break;
-            case State::Done:     return;
+        case State::Size: progressed = consume_size_line(); break;
+        case State::Data: progressed = consume_data(out); break;
+        case State::Trailer: progressed = consume_trailer_line(); break;
+        case State::Done: return;
         }
-        if (!progressed) break; // 数据不够，或发生错误，退出等下次
+        if (!progressed)
+            break; // 数据不够，或发生错误，退出等下次
     }
 }
 
@@ -107,5 +108,5 @@ bool ChunkDecoder::consume_trailer_line() {
         value.clear();
     }
     trailers_[key] = value; // 如果重复 key 则覆盖
-    return true; // 处理完一行，继续读下一行
+    return true;            // 处理完一行，继续读下一行
 }

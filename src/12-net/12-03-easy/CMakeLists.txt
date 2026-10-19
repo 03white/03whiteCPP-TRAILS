@@ -7,18 +7,18 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/bin)
 # 放在 add_executable 之前，后面每个 target 都能直接 link。
 find_package(CURL CONFIG REQUIRED)
 
-add_executable(${PROJECT_NAME} main.cpp)
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
-target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
-
+add_executable(${PROJECT_NAME}          main.cpp)
 add_executable(${PROJECT_NAME}-lesson01 lesson01.cpp)
-target_compile_features(${PROJECT_NAME}-lesson01 PRIVATE cxx_std_17)
-target_link_libraries(${PROJECT_NAME}-lesson01 PRIVATE CURL::libcurl)
-
 add_executable(${PROJECT_NAME}-lesson02 lesson02.cpp)
-target_compile_features(${PROJECT_NAME}-lesson02 PRIVATE cxx_std_17)
-target_link_libraries(${PROJECT_NAME}-lesson02 PRIVATE CURL::libcurl)
-
 add_executable(${PROJECT_NAME}-lesson03 lesson03.cpp)
-target_compile_features(${PROJECT_NAME}-lesson03 PRIVATE cxx_std_17)
-target_link_libraries(${PROJECT_NAME}-lesson03 PRIVATE CURL::libcurl)
+
+# 四个 target 的编译/链接要求完全一样，统一挂一遍，不用每个重复三行。
+foreach(tgt
+    ${PROJECT_NAME}
+    ${PROJECT_NAME}-lesson01
+    ${PROJECT_NAME}-lesson02
+    ${PROJECT_NAME}-lesson03
+)
+    target_compile_features(${tgt} PRIVATE cxx_std_17)
+    target_link_libraries(${tgt} PRIVATE CURL::libcurl)
+endforeach()

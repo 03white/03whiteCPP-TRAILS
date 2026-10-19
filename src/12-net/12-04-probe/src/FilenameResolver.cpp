@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr std::size_t kMaxFilenameBytes = 200;   // 给续传的 ".part" 后缀留余量
+constexpr std::size_t kMaxFilenameBytes = 200; // 给续传的 ".part" 后缀留余量
 
 std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
@@ -21,15 +21,20 @@ std::string to_lower(std::string s) {
 std::string trim(const std::string& s) {
     std::size_t b = 0;
     std::size_t e = s.size();
-    while (b < e && std::isspace(static_cast<unsigned char>(s[b]))) ++b;
-    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) --e;
+    while (b < e && std::isspace(static_cast<unsigned char>(s[b])))
+        ++b;
+    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1])))
+        --e;
     return s.substr(b, e - b);
 }
 
 int hex_value(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
@@ -84,30 +89,32 @@ std::string unquote(std::string s) {
 
 bool is_windows_reserved(const std::string& stem) {
     static const std::array<const char*, 22> kReserved = {
-        "con", "prn", "aux", "nul",
-        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
+        "con",  "prn",  "aux",  "nul",  "com1", "com2", "com3", "com4",
+        "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3",
+        "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
     const std::string lower = to_lower(stem);
-    return std::any_of(kReserved.begin(), kReserved.end(),
+    return std::any_of(kReserved.begin(),
+                       kReserved.end(),
                        [&lower](const char* r) { return lower == r; });
 }
 
-}   // namespace
+} // namespace
 
 namespace FilenameResolver {
 
-std::optional<std::string> from_content_disposition(const std::string& header_value) {
+std::optional<std::string>
+from_content_disposition(const std::string& header_value) {
     if (header_value.empty()) {
         return std::nullopt;
     }
 
-    std::optional<std::string> plain;      // filename="..."
-    std::optional<std::string> extended;   // filename*=UTF-8''...
+    std::optional<std::string> plain;    // filename="..."
+    std::optional<std::string> extended; // filename*=UTF-8''...
 
     for (const auto& part : split_params(header_value)) {
         const auto eq = part.find('=');
         if (eq == std::string::npos) {
-            continue;   // "attachment" / "inline" 这种无值参数
+            continue; // "attachment" / "inline" 这种无值参数
         }
         const std::string key = to_lower(trim(part.substr(0, eq)));
         const std::string raw = trim(part.substr(eq + 1));
@@ -120,18 +127,20 @@ std::optional<std::string> from_content_disposition(const std::string& header_va
             const auto q2 = (q1 == std::string::npos) ? std::string::npos
                                                       : raw.find('\'', q1 + 1);
             if (q2 == std::string::npos) {
-                continue;   // 不符合三段式，当它不存在
+                continue; // 不符合三段式，当它不存在
             }
             const std::string charset = to_lower(raw.substr(0, q1));
             std::string name = percent_decode(raw.substr(q2 + 1));
 
             // 解出来的是 charset 指定编码的**字节**，不是宽字符。
-            // UTF-8 直接用：Windows 上 std::ofstream(const char*) 走的是 ANSI 代码页，
-            // 中文名会乱码甚至开不了——真要正确落盘得转 UTF-16 走 _wfopen/wofstream，
-            // 那是 14-io 专题的事。这里只负责把正确的字节交出去。
-            // 非 UTF-8 的 charset（ISO-8859-1 等）这里不转码，交给下面 sanitize
+            // UTF-8 直接用：Windows 上 std::ofstream(const char*) 走的是 ANSI
+            // 代码页， 中文名会乱码甚至开不了——真要正确落盘得转 UTF-16 走
+            // _wfopen/wofstream， 那是 14-io
+            // 专题的事。这里只负责把正确的字节交出去。 非 UTF-8 的
+            // charset（ISO-8859-1 等）这里不转码，交给下面 sanitize
             // 兜底；转码需要 iconv/ICU，不值得为一个文件名引依赖。
-            if (charset == "utf-8" || charset == "iso-8859-1" || charset.empty()) {
+            if (charset == "utf-8" || charset == "iso-8859-1"
+                || charset.empty()) {
                 extended = std::move(name);
             }
         }
@@ -157,7 +166,8 @@ std::optional<std::string> from_url(const std::string& url) {
         return std::nullopt;
     }
 
-    // 先定位 authority 之后的位置，否则 "http://host" 里的 "//" 会被当成路径分隔符。
+    // 先定位 authority 之后的位置，否则 "http://host" 里的 "//"
+    // 会被当成路径分隔符。
     std::size_t start = 0;
     const auto scheme = url.find("://");
     if (scheme != std::string::npos) {
@@ -175,14 +185,14 @@ std::optional<std::string> from_url(const std::string& url) {
 
     const auto path_begin = url.find('/', start);
     if (path_begin == std::string::npos || path_begin >= end) {
-        return std::nullopt;   // "http://host" —— 根本没有 path
+        return std::nullopt; // "http://host" —— 根本没有 path
     }
 
     const std::string path = url.substr(path_begin, end - path_begin);
     const auto slash = path.rfind('/');
     const std::string last = path.substr(slash + 1);
     if (last.empty()) {
-        return std::nullopt;   // 以 / 结尾，是目录不是文件
+        return std::nullopt; // 以 / 结尾，是目录不是文件
     }
     return percent_decode(last);
 }
@@ -193,8 +203,9 @@ std::string sanitize(const std::string& raw, const std::string& fallback) {
     //   "../../autoexec.bat" -> 剥目录成分后剩 "autoexec.bat"，跑不出工作目录
     //   "C:\\Windows\\x"     -> 反斜杠也算目录分隔符，剥完剩 "x"
     //   ".." / "."           -> 剥完是纯点，整体拒掉走 fallback
-    //   "NUL"                -> Windows 设备名，open 会打开设备而不是文件，加前缀
-    //   "a\x01b.bin"         -> 控制字符，NTFS 直接拒绝，剔除
+    //   "NUL"                -> Windows 设备名，open
+    //   会打开设备而不是文件，加前缀 "a\x01b.bin"         -> 控制字符，NTFS
+    //   直接拒绝，剔除
     //
     // 关键顺序：**先剥目录，再过滤字符**。反过来的话 "..%2F..%2Fx" 解码出的
     // 斜杠会被先删成 "....x"，路径穿越是挡住了，但名字面目全非；而且一旦以后
@@ -222,7 +233,8 @@ std::string sanitize(const std::string& raw, const std::string& fallback) {
     }
 
     // 3. Windows 会静默吃掉结尾的点和空格（"a.txt." 实际打开的是 "a.txt"），
-    //    留着会让「我写的名字」和「实际的名字」对不上，续传时找不到 .part 文件。
+    //    留着会让「我写的名字」和「实际的名字」对不上，续传时找不到 .part
+    //    文件。
     while (!clean.empty() && (clean.back() == '.' || clean.back() == ' ')) {
         clean.pop_back();
     }
@@ -235,7 +247,8 @@ std::string sanitize(const std::string& raw, const std::string& fallback) {
     // 4. 截断。按字节截会切断 UTF-8 多字节序列，退回到最近的字符边界。
     if (clean.size() > kMaxFilenameBytes) {
         std::size_t cutpos = kMaxFilenameBytes;
-        while (cutpos > 0 && (static_cast<unsigned char>(clean[cutpos]) & 0xC0) == 0x80) {
+        while (cutpos > 0
+               && (static_cast<unsigned char>(clean[cutpos]) & 0xC0) == 0x80) {
             --cutpos;
         }
         clean = clean.substr(0, cutpos);
@@ -249,7 +262,8 @@ std::string sanitize(const std::string& raw, const std::string& fallback) {
 
     // 5. 设备名判断只看第一个点之前的部分——"NUL.txt" 在 Windows 上一样是设备。
     const auto dot = clean.find('.');
-    const std::string stem = (dot == std::string::npos) ? clean : clean.substr(0, dot);
+    const std::string stem =
+        (dot == std::string::npos) ? clean : clean.substr(0, dot);
     if (is_windows_reserved(stem)) {
         clean.insert(clean.begin(), '_');
     }
@@ -258,12 +272,13 @@ std::string sanitize(const std::string& raw, const std::string& fallback) {
 }
 
 std::string resolve(const std::optional<std::string>& content_disposition,
-                    const std::string&                effective_url,
-                    const std::string&                fallback) {
+                    const std::string& effective_url,
+                    const std::string& fallback) {
     // 优先级：Content-Disposition > URL 末段 > 兜底常量。
     // 每一级的「失败」都是返回 nullopt 或 sanitize 后为空，退到下一级。
     if (content_disposition) {
-        if (const auto from_cd = from_content_disposition(*content_disposition)) {
+        if (const auto from_cd =
+                from_content_disposition(*content_disposition)) {
             const std::string name = sanitize(*from_cd, fallback);
             if (name != fallback) {
                 return name;
@@ -283,4 +298,4 @@ std::string resolve(const std::optional<std::string>& content_disposition,
     return fallback;
 }
 
-}   // namespace FilenameResolver
+} // namespace FilenameResolver

@@ -27,7 +27,8 @@ void test_content_range() {
     //   "bytes 500-999/1234"        500    999    1234    非零起点
     //   "bytes 0-0/*"               0      0      none    总长未知（动态内容）
     //   "bytes 1233-1233/1234"      1233   1233   1234    最后一个字节
-    //   "  bytes 0-0/1234  "        0      0      1234    ← 你现在的实现能过吗？
+    //   "  bytes 0-0/1234  "        0      0      1234    ←
+    //   你现在的实现能过吗？
     //
     // 最后一行是真问题：libcurl 喂给你的头值有没有可能带前后空白？
     // 先想，再写测试，最后决定要不要改 parse。
@@ -58,8 +59,9 @@ void test_content_range() {
     // 直接抠斜杠后面的数字。
     //
     // 先写这两个用例让它们**红**，再决定：
-    //   (a) 扩展 parse 支持 has_range=false + total 的形式，Probe 那边的绕行删掉
-    //   (b) 维持现状，但在 ContentRange.hpp 里写明「不支持 416 形式」
+    //   (a) 扩展 parse 支持 has_range=false + total 的形式，Probe
+    //   那边的绕行删掉 (b) 维持现状，但在 ContentRange.hpp 里写明「不支持 416
+    //   形式」
     // 两条路都行，别让缺口没有记录。
 
     // ---- TODO: matches / length / to_string ----

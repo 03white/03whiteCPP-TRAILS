@@ -1,14 +1,17 @@
 #include "singledownloader.h"
 #include <stdexcept>
+#include <mutex>
 
 SingleDownloader::SingleDownloader(std::string target_url,
                                    std::string local_url,
                                    size_t start_pos,
-                                   size_t end_pos) :
+                                   size_t end_pos,
+                                   Progress* progress) :
     target_url(std::move(target_url)),
     local_url(std::move(local_url)),
     start_pos(start_pos),
-    end_pos(end_pos) {
+    end_pos(end_pos),
+    progress(progress) {
     headers_.append("Range: bytes=" + std::to_string(start_pos) + "-"
                     + std::to_string(end_pos));
 
@@ -16,6 +19,10 @@ SingleDownloader::SingleDownloader(std::string target_url,
     subCurl.setopt(CURLOPT_HTTPHEADER, headers_.get());
     subCurl.setopt(CURLOPT_WRITEFUNCTION, &SingleDownloader::write_triple);
     subCurl.setopt(CURLOPT_WRITEDATA, this);
+    subCurl.setopt(CURLOPT_NOPROGRESS, 0L);
+    subCurl.setopt(CURLOPT_XFERINFOFUNCTION,
+                   &SingleDownloader::progress_triple);
+    subCurl.setopt(CURLOPT_XFERINFODATA, this);
     fp.open(this->local_url, std::ios::binary | std::ios::in | std::ios::out);
     if (!fp.is_open()) {
         throw std::runtime_error("Failed to open file: " + this->local_url);
@@ -58,4 +65,23 @@ size_t SingleDownloader::write_callback(void* ptr, size_t size) {
     if (!fp)
         return 0; // 触发 CURLE_WRITE_ERROR
     return size;
+}
+
+size_t SingleDownloader::progress_triple(void* clientp,
+                                         curl_off_t dltotal,
+                                         curl_off_t dlnow,
+                                         curl_off_t ultotal,
+                                         curl_off_t ulnow) {
+    auto* self = static_cast<SingleDownloader*>(clientp);
+    return self->progress_callback(dltotal, dlnow);
+}
+
+size_t SingleDownloader::progress_callback(curl_off_t dltotal,
+                                           curl_off_t dlnow) {
+    size_t delta = static_cast<size_t>(dlnow - downloaded_size);
+    downloaded_size = static_cast<size_t>(dlnow);
+    if (progress) {
+        progress->add(delta);
+    }
+    return 0;
 }

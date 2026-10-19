@@ -14,25 +14,23 @@ GlobalCurlGuard::~GlobalCurlGuard() {
     curl_global_cleanup();
 }
 
-
 CurlSlist::~CurlSlist() {
     reset();
 }
 
 CurlSlist::CurlSlist(CurlSlist&& other) noexcept :
     list_(std::exchange(other.list_, nullptr)) {
-
 }
 
 CurlSlist& CurlSlist::operator=(CurlSlist&& other) noexcept {
     if (this != &other) {
         reset();
-        list_=std::exchange(other.list_, nullptr);
+        list_ = std::exchange(other.list_, nullptr);
     }
     return *this;
 }
 void CurlSlist::append(const std::string& header) {
-    auto newList_=curl_slist_append(list_, header.c_str());
+    auto newList_ = curl_slist_append(list_, header.c_str());
     if (!newList_) {
         throw std::bad_alloc{};
     }
@@ -46,8 +44,7 @@ void CurlSlist::reset() noexcept {
     }
 }
 
-
-CurlEasy::CurlEasy():handle_(curl_easy_init()){
+CurlEasy::CurlEasy() : handle_(curl_easy_init()) {
     if (!handle_) {
         throw std::runtime_error("curl_easy_init failed");
     }
@@ -59,7 +56,7 @@ void CurlEasy::throw_setopt_failed(CURLoption option, CURLcode code) {
 
 long CurlEasy::get_info_long(CURLINFO info) const {
     long value = 0;
-    CURLcode code=curl_easy_getinfo(handle_.get(), info, &value);
+    CURLcode code = curl_easy_getinfo(handle_.get(), info, &value);
     if (code != CURLE_OK) {
         throw std::runtime_error("curl_easy_getinfo failed: "
                                  + std::string(curl_easy_strerror(code)));
@@ -68,7 +65,7 @@ long CurlEasy::get_info_long(CURLINFO info) const {
 }
 
 std::string CurlEasy::get_info_string(CURLINFO info) const {
-    char*value = nullptr;
+    char* value = nullptr;
     CURLcode code = curl_easy_getinfo(handle_.get(), info, &value);
     if (code != CURLE_OK) {
         throw std::runtime_error("curl_easy_getinfo failed: "

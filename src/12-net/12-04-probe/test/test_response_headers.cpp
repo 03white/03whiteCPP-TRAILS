@@ -10,7 +10,7 @@ void feed(ResponseHeaders& h, const std::string& line) {
     h.add_line(raw.data(), raw.size());
 }
 
-}   // namespace
+} // namespace
 
 void test_response_headers() {
     check::suite("ResponseHeaders");
@@ -21,11 +21,13 @@ void test_response_headers() {
         feed(h, "HTTP/1.1 206 Partial Content");
         feed(h, "Content-Range: bytes 0-0/1234");
         feed(h, "Accept-Ranges: bytes");
-        feed(h, "");                        // 头区结束的空行
+        feed(h, ""); // 头区结束的空行
 
         CHECK_EQ(h.status_code(), 206);
-        CHECK_EQ(h.get("content-range"), std::optional<std::string>{"bytes 0-0/1234"});
-        CHECK_EQ(h.get("Content-Range"), std::optional<std::string>{"bytes 0-0/1234"});
+        CHECK_EQ(h.get("content-range"),
+                 std::optional<std::string>{"bytes 0-0/1234"});
+        CHECK_EQ(h.get("Content-Range"),
+                 std::optional<std::string>{"bytes 0-0/1234"});
         CHECK_EQ(h.get("nonexistent"), std::optional<std::string>{});
         CHECK(h.has("accept-ranges"));
         CHECK_EQ(h.entries().size(), std::size_t{2});
@@ -34,14 +36,15 @@ void test_response_headers() {
 
     // ---- TODO: 大小写不敏感（RFC 9110 §5.1）----
     //
-    //   喂 "CoNtEnT-LeNgTh: 5"，用 get("content-length") / get("CONTENT-LENGTH")
-    //   / get("Content-Length") 都要拿到 "5"。
+    //   喂 "CoNtEnT-LeNgTh: 5"，用 get("content-length") /
+    //   get("CONTENT-LENGTH") / get("Content-Length") 都要拿到 "5"。
     //   顺带确认：entries() 里存的 key 是小写的吗？
 
     // ---- TODO: 值的前后空白 ----
     //
     //   "ETag:   \"abc\"   "  ->  get("etag") 应该是 "\"abc\""，不带空白。
-    //   注意别把值**内部**的空格也吃掉："Last-Modified: Wed, 26 Aug 2026 09:15:33 GMT"
+    //   注意别把值**内部**的空格也吃掉："Last-Modified: Wed, 26 Aug 2026
+    //   09:15:33 GMT"
 
     // ---- TODO: 重定向多跳（这一条最重要）----
     //

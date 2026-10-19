@@ -21,17 +21,16 @@ std::optional<std::uint64_t> parse_u64(const std::string& raw) {
             return std::nullopt;
         }
         return static_cast<std::uint64_t>(v);
-    } catch (...) {
-        return std::nullopt;
-    }
+    } catch (...) { return std::nullopt; }
 }
 void note(DownloadPlan& plan, const std::string& line) {
     plan.notes += "  " + line + "\n";
 }
 
-}   // namespace
+} // namespace
 
-Probe::Probe(ProbeContext ctx) : ctx_(std::move(ctx)) {}
+Probe::Probe(ProbeContext ctx) : ctx_(std::move(ctx)) {
+}
 
 DownloadPlan Probe::run() {
     if (ctx_.url.empty()) {
@@ -55,8 +54,10 @@ DownloadPlan Probe::run() {
     return plan;
 }
 
-std::size_t Probe::discard_body(char* ptr, std::size_t size,
-                                std::size_t nmemb, void* userdata) {
+std::size_t Probe::discard_body(char* ptr,
+                                std::size_t size,
+                                std::size_t nmemb,
+                                void* userdata) {
     const std::size_t n = size * nmemb;
     auto* self = static_cast<Probe*>(userdata);
     if (!self) {
@@ -97,13 +98,14 @@ bool Probe::probe_range_get(CurlEasy& curl, DownloadPlan& plan) {
     }
     curl.setopt(CURLOPT_HTTPHEADER, req_headers.get());
     curl.setopt(CURLOPT_HTTPGET, 1L);
-    const CURLcode code = curl.perform();//发送网络请求
+    const CURLcode code = curl.perform(); // 发送网络请求
     if (code != CURLE_OK && code != CURLE_WRITE_ERROR) {
-        note(plan, std::string("range-get failed: ") + curl_easy_strerror(code));
-        return false;   // 没结论，让 HEAD 再试一次
+        note(plan,
+             std::string("range-get failed: ") + curl_easy_strerror(code));
+        return false; // 没结论，让 HEAD 再试一次
     }
     plan.effective_url = curl.get_info_string(CURLINFO_EFFECTIVE_URL);
-    plan.probe_status  = curl.get_info_long(CURLINFO_RESPONSE_CODE);
+    plan.probe_status = curl.get_info_long(CURLINFO_RESPONSE_CODE);
     plan.accept_ranges_header = headers_.get("accept-ranges");
     fill_common_fields(plan);
     const long status = plan.probe_status;
@@ -111,7 +113,9 @@ bool Probe::probe_range_get(CurlEasy& curl, DownloadPlan& plan) {
     if (status == 206) {
         const auto cr_raw = headers_.get("content-range");
         if (!cr_raw) {
-            note(plan, "206 without Content-Range -- not trustworthy, Range support not confirmed");
+            note(
+                plan,
+                "206 without Content-Range -- not trustworthy, Range support not confirmed");
             return false;
         }
         const auto cr = ContentRange::parse(*cr_raw);
@@ -122,10 +126,13 @@ bool Probe::probe_range_get(CurlEasy& curl, DownloadPlan& plan) {
         plan.supports_range = true;
         if (cr->total) {
             plan.total_size = *cr->total;
-            note(plan, "206 verified, total size from Content-Range: " +
-                           std::to_string(*cr->total));
+            note(plan,
+                 "206 verified, total size from Content-Range: "
+                     + std::to_string(*cr->total));
         } else {
-            note(plan, "206 verified, but Content-Range total is * -- total size unknown");
+            note(
+                plan,
+                "206 verified, but Content-Range total is * -- total size unknown");
         }
         return true;
     }
@@ -135,16 +142,21 @@ bool Probe::probe_range_get(CurlEasy& curl, DownloadPlan& plan) {
             plan.total_size = parse_u64(*cl);
         }
         if (plan.total_size) {
-            note(plan, "200 -- server ignored Range, total size from Content-Length: " +
-                           std::to_string(*plan.total_size));
+            note(plan,
+                 "200 -- server ignored Range, total size from Content-Length: "
+                     + std::to_string(*plan.total_size));
         } else {
-            note(plan, "200 without Content-Length (chunked) -- total size unknown");
+            note(plan,
+                 "200 without Content-Length (chunked) -- total size unknown");
         }
 
-        if (plan.accept_ranges_header &&
-            ResponseHeaders::to_lower(*plan.accept_ranges_header).find("bytes") !=
-                std::string::npos) {
-            note(plan, "Accept-Ranges claims bytes, but the probe got 200 -- trusting the probe");
+        if (plan.accept_ranges_header
+            && ResponseHeaders::to_lower(*plan.accept_ranges_header)
+                       .find("bytes")
+                   != std::string::npos) {
+            note(
+                plan,
+                "Accept-Ranges claims bytes, but the probe got 200 -- trusting the probe");
         }
         return true;
     }
@@ -156,16 +168,19 @@ bool Probe::probe_range_get(CurlEasy& curl, DownloadPlan& plan) {
             }
         }
         plan.supports_range = plan.total_size.has_value();
-        note(plan, "416 -- zero-length file, server does understand Range semantics");
+        note(plan,
+             "416 -- zero-length file, server does understand Range semantics");
         return plan.total_size.has_value();
     }
 
     if (status == 405 || status == 501) {
-        note(plan, std::to_string(status) + " -- GET rejected, falling back to HEAD");
+        note(plan,
+             std::to_string(status) + " -- GET rejected, falling back to HEAD");
         return false;
     }
 
-    note(plan, "unexpected status " + std::to_string(status) + " -- inconclusive");
+    note(plan,
+         "unexpected status " + std::to_string(status) + " -- inconclusive");
     return false;
 }
 
@@ -182,7 +197,7 @@ bool Probe::probe_head(CurlEasy& curl, DownloadPlan& plan) {
     if (req_headers.get()) {
         curl.setopt(CURLOPT_HTTPHEADER, req_headers.get());
     }
-    curl.setopt(CURLOPT_NOBODY, 1L);   // = HEAD
+    curl.setopt(CURLOPT_NOBODY, 1L); // = HEAD
 
     const CURLcode code = curl.perform();
     if (code != CURLE_OK) {
@@ -191,14 +206,16 @@ bool Probe::probe_head(CurlEasy& curl, DownloadPlan& plan) {
     }
 
     plan.effective_url = curl.get_info_string(CURLINFO_EFFECTIVE_URL);
-    plan.probe_status  = curl.get_info_long(CURLINFO_RESPONSE_CODE);
+    plan.probe_status = curl.get_info_long(CURLINFO_RESPONSE_CODE);
     if (!plan.accept_ranges_header) {
         plan.accept_ranges_header = headers_.get("accept-ranges");
     }
     fill_common_fields(plan);
 
     if (plan.probe_status < 200 || plan.probe_status >= 300) {
-        note(plan, "head status " + std::to_string(plan.probe_status) + " -- inconclusive");
+        note(plan,
+             "head status " + std::to_string(plan.probe_status)
+                 + " -- inconclusive");
         return false;
     }
 
@@ -206,20 +223,22 @@ bool Probe::probe_head(CurlEasy& curl, DownloadPlan& plan) {
         plan.total_size = parse_u64(*cl);
     }
     plan.supports_range = false;
-    note(plan, "head fallback: got total size, but Range support was never verified -- "
-               "conservatively treated as unsupported");
+    note(
+        plan,
+        "head fallback: got total size, but Range support was never verified -- "
+        "conservatively treated as unsupported");
 
     return plan.total_size.has_value();
 }
 
-void Probe::fill_common_fields( DownloadPlan& plan) const {
-    plan.etag          = headers_.get("etag");
+void Probe::fill_common_fields(DownloadPlan& plan) const {
+    plan.etag = headers_.get("etag");
     plan.last_modified = headers_.get("last-modified");
-    plan.content_type  = headers_.get("content-type");
+    plan.content_type = headers_.get("content-type");
     const std::string& url_for_name =
         plan.effective_url.empty() ? plan.requested_url : plan.effective_url;
-    plan.suggested_filename =
-        FilenameResolver::resolve(headers_.get("content-disposition"), url_for_name);
+    plan.suggested_filename = FilenameResolver::resolve(
+        headers_.get("content-disposition"), url_for_name);
 }
 
 TransferMode Probe::decide_mode(const DownloadPlan& plan) noexcept {
@@ -232,5 +251,3 @@ TransferMode Probe::decide_mode(const DownloadPlan& plan) noexcept {
     return plan.supports_range ? TransferMode::RangedParallel
                                : TransferMode::SingleResumable;
 }
-
-

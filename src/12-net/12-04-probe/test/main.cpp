@@ -3,7 +3,8 @@
 //   cmake --build --preset msvc-debug --target 12-04-probe-test
 //   ctest --preset msvc-debug --output-on-failure          # 或直接跑 exe
 //
-// 这里的测试**全部不联网**。需要真服务端的端到端验收走 testdata/probe_server.py。
+// 这里的测试**全部不联网**。需要真服务端的端到端验收走
+// testdata/probe_server.py。
 
 #include "check.hpp"
 

@@ -23,7 +23,7 @@ namespace {
 
 void print_plan(const DownloadPlan& plan);
 
-}   // namespace
+} // namespace
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -33,7 +33,8 @@ int main(int argc, char* argv[]) {
     ProbeContext ctx;
     ctx.url = argv[1];
     for (int i = 2; i < argc; ++i) {
-        if (std::string(argv[i]) == "-v") ctx.verbose = true;
+        if (std::string(argv[i]) == "-v")
+            ctx.verbose = true;
     }
 
     try {
@@ -47,7 +48,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
-namespace{
+namespace {
 
 void print_plan(const DownloadPlan& plan) {
     std::cout << "---- download plan ----\n";
@@ -60,13 +61,16 @@ void print_plan(const DownloadPlan& plan) {
     } else {
         std::cout << "(unknown)\n";
     }
-    std::cout << "range support : " << (plan.supports_range ? "yes (206 verified)" : "no")
-              << "\n";
-    std::cout << "accept-ranges : " << plan.accept_ranges_header.value_or("(absent)")
+    std::cout << "range support : "
+              << (plan.supports_range ? "yes (206 verified)" : "no") << "\n";
+    std::cout << "accept-ranges : "
+              << plan.accept_ranges_header.value_or("(absent)")
               << "   <- just fo reference\n";
     std::cout << "etag          : " << plan.etag.value_or("(absent)") << "\n";
-    std::cout << "last-modified : " << plan.last_modified.value_or("(absent)") << "\n";
-    std::cout << "content-type  : " << plan.content_type.value_or("(absent)") << "\n";
+    std::cout << "last-modified : " << plan.last_modified.value_or("(absent)")
+              << "\n";
+    std::cout << "content-type  : " << plan.content_type.value_or("(absent)")
+              << "\n";
     std::cout << "filename      : " << plan.suggested_filename << "\n";
     std::cout << "mode          : " << to_string(plan.mode) << "\n";
     if (!plan.notes.empty()) {
@@ -75,4 +79,4 @@ void print_plan(const DownloadPlan& plan) {
     std::cout << "-----------------------" << std::endl;
 }
 
-}
+} // namespace
