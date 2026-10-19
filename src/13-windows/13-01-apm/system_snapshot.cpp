@@ -6,22 +6,19 @@
 #include <cwchar>
 
 namespace {
-std::uint64_t toUInt64(const FILETIME& fileTime)
-{
+std::uint64_t toUInt64(const FILETIME& fileTime) {
     ULARGE_INTEGER value{};
     value.LowPart = fileTime.dwLowDateTime;
     value.HighPart = fileTime.dwHighDateTime;
     return value.QuadPart;
 }
-}
+} // namespace
 
-SystemCollector::SystemCollector()
-{
+SystemCollector::SystemCollector() {
     collectCpuUsage();
 }
 
-SystemSnapshot SystemCollector::collect()
-{
+SystemSnapshot SystemCollector::collect() {
     SystemSnapshot snapshot{};
     snapshot.cpuUsagePercent = collectCpuUsage();
     collectMemory(snapshot);
@@ -29,8 +26,7 @@ SystemSnapshot SystemCollector::collect()
     return snapshot;
 }
 
-double SystemCollector::collectCpuUsage()
-{
+double SystemCollector::collectCpuUsage() {
     FILETIME idleTime{};
     FILETIME kernelTime{};
     FILETIME userTime{};
@@ -65,12 +61,12 @@ double SystemCollector::collectCpuUsage()
     }
 
     const auto busyDelta = totalDelta > idleDelta ? totalDelta - idleDelta : 0;
-    const auto usage = static_cast<double>(busyDelta) * 100.0 / static_cast<double>(totalDelta);
+    const auto usage = static_cast<double>(busyDelta) * 100.0
+                       / static_cast<double>(totalDelta);
     return std::clamp(usage, 0.0, 100.0);
 }
 
-void SystemCollector::collectMemory(SystemSnapshot& snapshot) const
-{
+void SystemCollector::collectMemory(SystemSnapshot& snapshot) const {
     MEMORYSTATUSEX memoryStatus{};
     memoryStatus.dwLength = sizeof(memoryStatus);
 
@@ -79,22 +75,25 @@ void SystemCollector::collectMemory(SystemSnapshot& snapshot) const
     }
 
     snapshot.memoryTotalBytes = memoryStatus.ullTotalPhys;
-    snapshot.memoryUsedBytes = memoryStatus.ullTotalPhys - memoryStatus.ullAvailPhys;
+    snapshot.memoryUsedBytes =
+        memoryStatus.ullTotalPhys - memoryStatus.ullAvailPhys;
 }
 
-void SystemCollector::collectDisks(SystemSnapshot& snapshot) const
-{
+void SystemCollector::collectDisks(SystemSnapshot& snapshot) const {
     const DWORD bufferLength = GetLogicalDriveStringsW(0, nullptr);
     if (bufferLength == 0) {
         return;
     }
 
     std::vector<wchar_t> buffer(bufferLength + 1);
-    if (GetLogicalDriveStringsW(static_cast<DWORD>(buffer.size()), buffer.data()) == 0) {
+    if (GetLogicalDriveStringsW(static_cast<DWORD>(buffer.size()),
+                                buffer.data())
+        == 0) {
         return;
     }
 
-    for (const wchar_t* drive = buffer.data(); *drive != L'\0'; drive += std::wcslen(drive) + 1) {
+    for (const wchar_t* drive = buffer.data(); *drive != L'\0';
+         drive += std::wcslen(drive) + 1) {
         const UINT driveType = GetDriveTypeW(drive);
         if (driveType != DRIVE_FIXED && driveType != DRIVE_REMOVABLE) {
             continue;
@@ -103,7 +102,8 @@ void SystemCollector::collectDisks(SystemSnapshot& snapshot) const
         ULARGE_INTEGER freeBytesAvailable{};
         ULARGE_INTEGER totalBytes{};
         ULARGE_INTEGER totalFreeBytes{};
-        if (!GetDiskFreeSpaceExW(drive, &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
+        if (!GetDiskFreeSpaceExW(
+                drive, &freeBytesAvailable, &totalBytes, &totalFreeBytes)) {
             continue;
         }
 
