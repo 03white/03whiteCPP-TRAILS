@@ -14,12 +14,13 @@ struct IDataReceiver {
 };
 
 ///< 配置接收方 —— 上传 → 采集 这条流的下游
-struct IConfigReceiver{
+struct IConfigReceiver {
     virtual ~IConfigReceiver() = default;
     virtual void onConfigUpdated(int intervalMs) = 0;
 };
 
-// ============ 2. 廣播基类：把"维护订阅者名单"这件事抽出来，代碼復用 ============
+// ============ 2. 廣播基类：把"维护订阅者名单"这件事抽出来，代碼復用
+// ============
 
 template <typename ReceiverT>
 class Publisher {
@@ -28,6 +29,7 @@ public:
         std::lock_guard<std::mutex> lock(mLock);
         mReceivers.push_back(receiver); // 存 weak_ptr：只订阅，不持有
     }
+
 protected:
     ///< 把 method(args...) 广播给所有还活着的接收方
     template <typename Method, typename... Args>
@@ -48,17 +50,19 @@ protected:
              alive) // 锁外回调：避免回调里再 addReceiver 造成死锁
             std::invoke(method, receiver, args...);
     }
+
 private:
     std::vector<std::weak_ptr<ReceiverT>> mReceivers;
-    std::mutex mLock;//这个锁是干什么？
+    std::mutex mLock; // 这个锁是干什么？
 };
 
 // ============ 3. 两个模块：各自"发一种、收一种" ============
 
 ///< 采集模块：产出数据，消费配置
-class CaptureModule : public Publisher<IDataReceiver>, // 继承广播通知的内存结构和功能
-                      public IConfigReceiver,          // 自己也是观察者
-                      public std::enable_shared_from_this<CaptureModule> {
+class CaptureModule
+    : public Publisher<IDataReceiver>, // 继承广播通知的内存结构和功能
+      public IConfigReceiver,          // 自己也是观察者
+      public std::enable_shared_from_this<CaptureModule> {
 public:
     void capture() {
         notifyReceivers(&IDataReceiver::onDataArrived, std::string("cpu=42%"));
@@ -90,7 +94,7 @@ public:
         notifyReceivers(&IConfigReceiver::onConfigUpdated, 5000);
     }
 
-    //类型提升
+    // 类型提升
     std::shared_ptr<IDataReceiver> asDataReceiver() {
         return shared_from_this();
     }
