@@ -13,5 +13,8 @@ public:
     }
 };
 int main() {
+    Child* child = new Child();
+    Parent* parent = child;//允许的向上转型
+    parent->function();     // 调用的是父类的虚函数  
     return 0;
 }
