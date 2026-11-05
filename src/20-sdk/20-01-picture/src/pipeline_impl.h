@@ -52,7 +52,6 @@ private:
     std::map<StepId, std::size_t> indeg_;
     std::set<StepId> handled_;          // 已到达终态或被跳过
     std::size_t pending_{0};            // 尚未到达终态的步骤数
-
     // 最后声明：析构时最先销毁，析构函数里 join 所有 worker
     std::unique_ptr<boost::asio::thread_pool> pool_;
 };

@@ -156,9 +156,7 @@ bool PipelineImpl::RunAsync() {
         if (running_) return false;
         running_ = true;
     }
-
     building_ = false;   // 冻结图
-
     // 1) 静态环检测：异步路径没有“自然结束”，有环就会永远等不到 pending 归零
     std::map<StepId, std::size_t> indeg;
     std::queue<StepId> seed;
@@ -166,7 +164,6 @@ bool PipelineImpl::RunAsync() {
         indeg[kv.first] = kv.second.indegree_;
         if (kv.second.indegree_ == 0) seed.push(kv.first);
     }
-
     auto work = indeg;
     std::set<StepId> reachable;
     while (!seed.empty()) {
@@ -177,19 +174,16 @@ bool PipelineImpl::RunAsync() {
             if (--work[down] == 0) seed.push(down);
         }
     }
-
     if (reachable.size() != nodes_.size()) {
         std::vector<StepId> cycle;
         for (const auto& kv : nodes_) {
             if (!reachable.count(kv.first)) cycle.push_back(kv.first);
         }
-
         {
             std::lock_guard<std::mutex> lk(m_);
             running_ = false;
         }
         doneCv_.notify_all();
-
         Error cycleErr;
         cycleErr.code = 2;
         cycleErr.message = "cycle detected";
@@ -199,7 +193,6 @@ bool PipelineImpl::RunAsync() {
         }
         return false;
     }
-
     // 2) 初始化本轮调度状态，线程池懒创建
     std::vector<StepId> roots;
     bool emptyGraph = false;
@@ -209,32 +202,25 @@ bool PipelineImpl::RunAsync() {
         handled_.clear();
         pending_ = nodes_.size();
         emptyGraph = nodes_.empty();
-
         if (!emptyGraph && !pool_) {
             const auto threads = cfg_.maxConcurrency == 0 ? 1u : cfg_.maxConcurrency;
             pool_ = std::make_unique<boost::asio::thread_pool>(
                 static_cast<std::size_t>(threads));
         }
-
         for (const auto& kv : indeg_) {
             if (kv.second == 0) roots.push_back(kv.first);
         }
-
         if (emptyGraph) running_ = false;
     }
-
     if (emptyGraph) {
         doneCv_.notify_all();
         return true;
     }
-
     // 3) 点火：提交根节点后立即返回
     for (StepId id : roots)
         boost::asio::post(*pool_, [this, id] { runStep(id); });
-
     return true;
 }
-
 // ---------------------------------------------------------------
 // worker 上执行一个步骤，并在结束时把下一批 ready 的步骤提交回池子。
 // ---------------------------------------------------------------
