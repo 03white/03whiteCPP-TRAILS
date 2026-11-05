@@ -8,6 +8,7 @@ add_executable(imgpipe_tests
     test_error.cpp
     test_lifecycle.cpp
     test_async_contract.cpp
+    test_cancel.cpp
 )
 
 target_link_libraries(imgpipe_tests PRIVATE
