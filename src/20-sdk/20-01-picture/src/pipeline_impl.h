@@ -36,6 +36,11 @@ private:
     };
 
     void notify(StepId id, StepState state, const Error& err);
+
+    // 执行一个节点并发出 Pending/Running/终态通知；返回是否成功。
+    // 同步与异步只在“执行前的调度状态”和“执行后的入度维护”上不同。
+    bool executeNode(StepId id, Error& err);
+
     void runStep(StepId id);            // 在 worker 线程上执行一个步骤
 
     Config cfg_;

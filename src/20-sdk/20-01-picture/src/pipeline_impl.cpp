@@ -56,6 +56,33 @@ void PipelineImpl::notify(StepId id, StepState state, const Error& err) {
 }
 
 // ---------------------------------------------------------------
+// 执行一个节点：Pending → Running → fn → 终态。
+// 同步循环和异步 runStep 共用，区别只在执行前后的调度状态维护。
+// ---------------------------------------------------------------
+bool PipelineImpl::executeNode(StepId id, Error& err) {
+    notify(id, StepState::Pending, Error{});
+    notify(id, StepState::Running, Error{});
+
+    err = Error{};
+    try {
+        nodes_.at(id).fn_();
+    } catch (const std::exception& e) {
+        err.code = 1;
+        err.message = e.what();
+        notify(id, StepState::Failed, err);
+        return false;
+    } catch (...) {
+        err.code = 1;
+        err.message = "unknown exception";
+        notify(id, StepState::Failed, err);
+        return false;
+    }
+
+    notify(id, StepState::Succeeded, Error{});
+    return true;
+}
+
+// ---------------------------------------------------------------
 // 同步执行：调用线程按拓扑序跑完整张图，回调也在调用线程触发。
 // ---------------------------------------------------------------
 bool PipelineImpl::Run() {
@@ -66,10 +93,6 @@ bool PipelineImpl::Run() {
     }
 
     building_ = false;   // 冻结图
-
-    // 所有节点先发 Pending
-    for (const auto& kv : nodes_)
-        notify(kv.first, StepState::Pending, Error{});
 
     // 入度副本
     std::map<StepId, std::size_t> indeg;
@@ -88,6 +111,7 @@ bool PipelineImpl::Run() {
             const StepId v = q.front();
             q.pop();
             if (!handled.insert(v).second) continue;
+            notify(v, StepState::Pending, Error{});
             notify(v, StepState::Skipped, err);
             for (StepId w : nodes_.at(v).next_) q.push(w);
         }
@@ -101,27 +125,11 @@ bool PipelineImpl::Run() {
         handled.insert(id);
 
         Error err;
-        bool ok = true;
-        notify(id, StepState::Running, Error{});
-        try {
-            nodes_.at(id).fn_();
-        } catch (const std::exception& e) {
-            ok = false;
-            err.code = 1;
-            err.message = e.what();
-        } catch (...) {
-            ok = false;
-            err.code = 1;
-            err.message = "unknown exception";
-        }
-
-        if (!ok) {
-            notify(id, StepState::Failed, err);
+        if (!executeNode(id, err)) {
             skipDownstream(id, err);
             continue;
         }
 
-        notify(id, StepState::Succeeded, Error{});
         for (StepId down : nodes_.at(id).next_) {
             if (handled.count(down)) continue;
             if (--indeg[down] == 0) ready.push(down);
@@ -135,6 +143,7 @@ bool PipelineImpl::Run() {
         cycleErr.message = "cycle detected";
         for (const auto& kv : nodes_) {
             if (handled.count(kv.first)) continue;
+            notify(kv.first, StepState::Pending, Error{});
             notify(kv.first, StepState::Failed, cycleErr);
         }
     }
@@ -225,26 +234,10 @@ bool PipelineImpl::RunAsync() {
 // worker 上执行一个步骤，并在结束时把下一批 ready 的步骤提交回池子。
 // ---------------------------------------------------------------
 void PipelineImpl::runStep(StepId id) {
-    notify(id, StepState::Pending, Error{});
-    notify(id, StepState::Running, Error{});
-
     Error err;
-    bool ok = true;
-    try {
-        nodes_.at(id).fn_();
-    } catch (const std::exception& e) {
-        ok = false;
-        err.code = 1;
-        err.message = e.what();
-    } catch (...) {
-        ok = false;
-        err.code = 1;
-        err.message = "unknown exception";
-    }
+    const bool ok = executeNode(id, err);
 
     if (ok) {
-        notify(id, StepState::Succeeded, Error{});
-
         std::vector<StepId> ready;
         bool finished = false;
         {
@@ -259,23 +252,18 @@ void PipelineImpl::runStep(StepId id) {
                 finished = true;
             }
         }
-
         for (StepId down : ready)
             boost::asio::post(*pool_, [this, down] { runStep(down); });
 
         if (finished) doneCv_.notify_all();
         return;
     }
-
-    notify(id, StepState::Failed, err);
-
     // 下游全部跳过；pending 必须照常递减，否则 Wait() 永远醒不来
     std::vector<StepId> skipped;
     bool finished = false;
     {
         std::lock_guard<std::mutex> lk(m_);
         if (handled_.insert(id).second) --pending_;
-
         std::queue<StepId> q;
         for (StepId v : nodes_.at(id).next_) q.push(v);
         while (!q.empty()) {
@@ -286,18 +274,15 @@ void PipelineImpl::runStep(StepId id) {
             --pending_;
             for (StepId w : nodes_.at(v).next_) q.push(w);
         }
-
         if (pending_ == 0) {
             running_ = false;
             finished = true;
         }
     }
-
     for (StepId v : skipped) {
         notify(v, StepState::Pending, Error{});
         notify(v, StepState::Skipped, err);
     }
-
     if (finished) doneCv_.notify_all();
 }
 
