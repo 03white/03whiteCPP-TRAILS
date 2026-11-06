@@ -13,7 +13,7 @@
 │   ├── image_pipeline.h        # 对外 C++ 接口
 │   └── image_pipeline_c.h      # 对外 C API
 ├── src/
-│   ├── pipeline_impl.h         # 只剩 struct Impl 前向声明
+│   ├── pipeline_impl.h         # 实现类声明（含成员）
 │   ├── pipeline_impl.cpp       # 建图、同步/异步调度、线程池（全部实现细节）
 │   └── c_api.cpp               # C API：不透明句柄 + 错误码
 ├── tests/                      # GTest 用例
@@ -94,5 +94,5 @@ ctest --test-dir build\msvc-debug --output-on-failure -R "Smoke|Topology|Error|L
 | 1 | 建图、拓扑排序、同步 `Run`、环检测 | 完成 |
 | 2 | 线程池、异步 `RunAsync`、`Wait` | 完成 |
 | 3 | 取消、生命周期、并发压测 | 完成（ASan 全量通过；TSan 需 Clang，当前环境不可用） |
-| 4 | Pimpl 拆分、`CreateForTest` / Mock | 完成 |
+| 4 | `CreateForTest` / Mock（未采用 Pimpl） | 完成 |
 | 5 | C API、Python ctypes demo | 完成 |

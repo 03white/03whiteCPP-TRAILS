@@ -1,459 +1,386 @@
 #include "pipeline_impl.h"
 
 #include <boost/asio/post.hpp>
-#include <boost/asio/thread_pool.hpp>
 
 #include <algorithm>
-#include <condition_variable>
-#include <cstddef>
-#include <cstdint>
-#include <map>
-#include <memory>
-#include <mutex>
 #include <queue>
-#include <set>
 #include <stdexcept>
-#include <string>
 #include <utility>
-#include <vector>
 
 namespace imgpipe {
 
-// 所有实现细节都在这里：公共头与私有头都看不到锁、容器、Boost。
-struct PipelineImpl::Impl {
-    struct StepNode {
-        StepId id{0};
-        std::string name;
-        Step fn;
-        std::vector<StepId> next;      // 出边
-        std::size_t indegree{0};       // 入度
+PipelineImpl::PipelineImpl(const Config& cfg, bool testMode)
+    : cfg_(cfg), testMode_(testMode) {}
+
+PipelineImpl::~PipelineImpl() {
+    Cancel();
+    Wait();
+}
+
+StepId PipelineImpl::AddStep(std::string name, Step fn) {
+    if (!building_) throw std::logic_error("AddStep: graph is frozen after Run");
+
+    const StepId id = nextId_++;
+    nodes_.emplace(id, StepNode{id, std::move(name), std::move(fn), {}, 0});
+    return id;
+}
+
+void PipelineImpl::AddDependency(StepId downstream, StepId upstream) {
+    if (!building_)
+        throw std::logic_error("AddDependency: graph is frozen after Run");
+
+    const auto up = nodes_.find(upstream);
+    const auto down = nodes_.find(downstream);
+    if (up == nodes_.end() || down == nodes_.end())
+        throw std::invalid_argument("AddDependency: unknown StepId");
+    if (downstream == upstream)
+        throw std::invalid_argument("AddDependency: self dependency");
+
+    auto& next = up->second.next;
+    if (std::find(next.begin(), next.end(), downstream) != next.end())
+        return;   // 重复边：忽略
+
+    next.push_back(downstream);      // 边记在上游的出边表
+    ++down->second.indegree;         // 入度记在下游
+}
+
+void PipelineImpl::SetListener(Listener listener) {
+    std::shared_ptr<const Listener> next;
+    if (listener) {
+        next = std::make_shared<const Listener>(std::move(listener));
+    }
+
+    std::lock_guard<std::mutex> lk(m_);
+    listener_ = std::move(next);
+}
+
+bool PipelineImpl::notify(StepId id, StepState state, const Error& err) {
+    // 先取一份强引用：即使此刻 SetListener(nullptr)，正在执行的回调也安全。
+    std::shared_ptr<const Listener> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        snapshot = listener_;
+    }
+    if (!snapshot) return true;
+
+    try {
+        (*snapshot)(id, state, err);
+        return true;
+    } catch (...) {
+        // 契约：回调异常不得穿透；由 executeNode 转成 Step Failed。
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------
+// 执行一个节点：Pending → Running → fn → 终态。
+// 同步与异步共用；区别只在执行前后如何维护调度状态。
+// ---------------------------------------------------------------
+bool PipelineImpl::executeNode(StepId id, Error& err) {
+    auto fail = [&](const Error& e) {
+        err = e;
+        notify(id, StepState::Failed, err);
+        return false;
     };
 
-    struct Progress {
-        std::vector<StepId> ready;     // 需要继续调度的下游
-        std::vector<StepId> skipped;   // 需要发 Skipped 的下游
-        bool finished = false;         // pending 是否归零
-    };
+    if (!notify(id, StepState::Pending, Error{}))
+        return fail(Error{3, "listener exception"});
+    if (!notify(id, StepState::Running, Error{}))
+        return fail(Error{3, "listener exception"});
 
-    Impl(const Config& c, bool test) : cfg(c), testMode(test) {}
-
-    // ---- 构图 ----
-    StepId AddStep(std::string name, Step fn) {
-        if (!building) throw std::logic_error("AddStep: graph is frozen after Run");
-
-        const StepId id = nextId++;
-        nodes.emplace(id, StepNode{id, std::move(name), std::move(fn), {}, 0});
-        return id;
+    err = Error{};
+    try {
+        nodes_.at(id).fn();
+    } catch (const std::exception& e) {
+        return fail(Error{1, e.what()});
+    } catch (...) {
+        return fail(Error{1, "unknown exception"});
     }
 
-    void AddDependency(StepId downstream, StepId upstream) {
-        if (!building)
-            throw std::logic_error("AddDependency: graph is frozen after Run");
+    if (!notify(id, StepState::Succeeded, Error{}))
+        return fail(Error{3, "listener exception"});
+    return true;
+}
 
-        const auto up = nodes.find(upstream);
-        const auto down = nodes.find(downstream);
-        if (up == nodes.end() || down == nodes.end())
-            throw std::invalid_argument("AddDependency: unknown StepId");
-        if (downstream == upstream)
-            throw std::invalid_argument("AddDependency: self dependency");
-
-        auto& next = up->second.next;
-        if (std::find(next.begin(), next.end(), downstream) != next.end())
-            return;   // 重复边：忽略
-
-        next.push_back(downstream);      // 边记在上游的出边表
-        ++down->second.indegree;         // 入度记在下游
+// ---------------------------------------------------------------
+// 调度状态维护（调用方持锁）
+// ---------------------------------------------------------------
+std::uint64_t PipelineImpl::resetSchedulerLocked() {
+    indeg_.clear();
+    for (const auto& kv : nodes_) {
+        indeg_[kv.first] = kv.second.indegree;
     }
+    handled_.clear();
+    runningNodes_.clear();
+    pending_ = nodes_.size();
+    cancelled_ = false;
+    return ++runGeneration_;
+}
 
-    void SetListener(Listener value) {
-        std::shared_ptr<const Listener> next;
-        if (value) {
-            next = std::make_shared<const Listener>(std::move(value));
-        }
+bool PipelineImpl::beginNode(StepId id, std::uint64_t generation) {
+    std::lock_guard<std::mutex> lk(m_);
+    if (generation != runGeneration_) return false;   // 上一轮残留的排队任务
+    if (handled_.count(id)) return false;             // 已被 Cancel 标记
+    runningNodes_.insert(id);
+    return true;
+}
 
-        std::lock_guard<std::mutex> lk(m);
-        listener = std::move(next);
-    }
+PipelineImpl::Progress PipelineImpl::completeSuccess(StepId id) {
+    Progress progress;
+    std::lock_guard<std::mutex> lk(m_);
+    runningNodes_.erase(id);
+    handled_.insert(id);
 
-    // ---- 通知 ----
-    bool notify(StepId id, StepState state, const Error& err) {
-        // 先取一份强引用：即使此刻 SetListener(nullptr)，正在执行的回调也安全。
-        std::shared_ptr<const Listener> snapshot;
-        {
-            std::lock_guard<std::mutex> lk(m);
-            snapshot = listener;
-        }
-        if (!snapshot) return true;
-
-        try {
-            (*snapshot)(id, state, err);
-            return true;
-        } catch (...) {
-            return false;   // 回调异常由 executeNode 转成 Step Failed
+    if (!cancelled_) {
+        for (StepId down : nodes_.at(id).next) {
+            if (handled_.count(down)) continue;
+            if (--indeg_[down] == 0) progress.ready.push_back(down);
         }
     }
 
-    // ---- 执行一个节点 ----
-    bool executeNode(StepId id, Error& err) {
-        auto fail = [&](const Error& e) {
-            err = e;
-            notify(id, StepState::Failed, err);
-            return false;
-        };
-
-        if (!notify(id, StepState::Pending, Error{}))
-            return fail(Error{3, "listener exception"});
-        if (!notify(id, StepState::Running, Error{}))
-            return fail(Error{3, "listener exception"});
-
-        err = Error{};
-        try {
-            nodes.at(id).fn();
-        } catch (const std::exception& e) {
-            return fail(Error{1, e.what()});
-        } catch (...) {
-            return fail(Error{1, "unknown exception"});
-        }
-
-        if (!notify(id, StepState::Succeeded, Error{}))
-            return fail(Error{3, "listener exception"});
-        return true;
+    if (--pending_ == 0) {
+        running_ = false;
+        progress.finished = true;
     }
+    return progress;
+}
 
-    // ---- 调度状态（调用方持锁） ----
-    std::uint64_t resetSchedulerLocked() {
-        indeg.clear();
-        for (const auto& kv : nodes) {
-            indeg[kv.first] = kv.second.indegree;
-        }
-        handled.clear();
-        runningNodes.clear();
-        pending = nodes.size();
-        cancelled = false;
-        return ++runGeneration;
-    }
+PipelineImpl::Progress PipelineImpl::completeFailure(StepId id) {
+    Progress progress;
+    std::lock_guard<std::mutex> lk(m_);
+    runningNodes_.erase(id);
 
-    bool beginNode(StepId id, std::uint64_t generation) {
-        std::lock_guard<std::mutex> lk(m);
-        if (generation != runGeneration) return false;   // 上一轮残留任务
-        if (handled.count(id)) return false;             // 已被 Cancel 标记
-        runningNodes.insert(id);
-        return true;
-    }
+    if (handled_.insert(id).second) --pending_;
 
-    Progress completeSuccess(StepId id) {
-        Progress progress;
-        std::lock_guard<std::mutex> lk(m);
-        runningNodes.erase(id);
-        handled.insert(id);
-
-        if (!cancelled) {
-            for (StepId down : nodes.at(id).next) {
-                if (handled.count(down)) continue;
-                if (--indeg[down] == 0) progress.ready.push_back(down);
-            }
-        }
-
-        if (--pending == 0) {
-            running = false;
-            progress.finished = true;
-        }
-        return progress;
-    }
-
-    Progress completeFailure(StepId id) {
-        Progress progress;
-        std::lock_guard<std::mutex> lk(m);
-        runningNodes.erase(id);
-
-        if (handled.insert(id).second) --pending;
-
-        if (!cancelled) {
-            std::queue<StepId> q;
-            for (StepId v : nodes.at(id).next) q.push(v);
-            while (!q.empty()) {
-                const StepId v = q.front();
-                q.pop();
-                if (!handled.insert(v).second) continue;
-                progress.skipped.push_back(v);
-                --pending;
-                for (StepId w : nodes.at(v).next) q.push(w);
-            }
-        }
-
-        if (pending == 0) {
-            running = false;
-            progress.finished = true;
-        }
-        return progress;
-    }
-
-    void emitSkipped(const std::vector<StepId>& skipped, const Error& err) {
-        for (StepId v : skipped) {
-            notify(v, StepState::Pending, Error{});
-            notify(v, StepState::Skipped, err);
+    if (!cancelled_) {
+        std::queue<StepId> q;
+        for (StepId v : nodes_.at(id).next) q.push(v);
+        while (!q.empty()) {
+            const StepId v = q.front();
+            q.pop();
+            if (!handled_.insert(v).second) continue;
+            progress.skipped.push_back(v);
+            --pending_;
+            for (StepId w : nodes_.at(v).next) q.push(w);
         }
     }
 
-    // ---- 同步执行 ----
-    bool Run() {
-        std::uint64_t generation = 0;
-        {
-            std::lock_guard<std::mutex> lk(m);
-            if (running) return false;
-            running = true;
-            generation = resetSchedulerLocked();
+    if (pending_ == 0) {
+        running_ = false;
+        progress.finished = true;
+    }
+    return progress;
+}
+
+void PipelineImpl::emitSkipped(const std::vector<StepId>& skipped, const Error& err) {
+    for (StepId v : skipped) {
+        notify(v, StepState::Pending, Error{});
+        notify(v, StepState::Skipped, err);
+    }
+}
+
+// ---------------------------------------------------------------
+// 同步执行
+// ---------------------------------------------------------------
+bool PipelineImpl::Run() {
+    std::uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        if (running_) return false;
+        running_ = true;
+        generation = resetSchedulerLocked();
+    }
+    building_ = false;   // 冻结图
+
+    std::queue<StepId> ready;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        for (const auto& kv : indeg_) {
+            if (kv.second == 0) ready.push(kv.first);
         }
-        building = false;   // 冻结图
-
-        std::queue<StepId> ready;
-        {
-            std::lock_guard<std::mutex> lk(m);
-            for (const auto& kv : indeg) {
-                if (kv.second == 0) ready.push(kv.first);
-            }
-        }
-
-        while (!ready.empty()) {
-            const StepId id = ready.front();
-            ready.pop();
-
-            if (!beginNode(id, generation)) continue;
-
-            Error err;
-            const bool ok = executeNode(id, err);
-            Progress progress = ok ? completeSuccess(id) : completeFailure(id);
-
-            if (!ok) emitSkipped(progress.skipped, err);
-            for (StepId down : progress.ready) ready.push(down);
-            if (progress.finished) doneCv.notify_all();
-        }
-
-        // 环检测：正常 DAG 里每个节点要么执行、要么被跳过。
-        std::vector<StepId> cycle;
-        bool superseded = false;
-        {
-            std::lock_guard<std::mutex> lk(m);
-            superseded = (generation != runGeneration);
-            if (!superseded) {
-                for (const auto& kv : nodes) {
-                    if (!handled.count(kv.first)) cycle.push_back(kv.first);
-                }
-                running = false;
-            }
-        }
-
-        if (!superseded) {
-            Error cycleErr{2, "cycle detected"};
-            for (StepId id : cycle) {
-                notify(id, StepState::Pending, Error{});
-                notify(id, StepState::Failed, cycleErr);
-            }
-            doneCv.notify_all();
-        }
-        return true;
     }
 
-    // ---- 异步执行 ----
-    bool RunAsync() {
-        // 测试模式：不启动线程，退化为同步执行
-        if (testMode) return Run();
+    while (!ready.empty()) {
+        const StepId id = ready.front();
+        ready.pop();
 
-        {
-            std::lock_guard<std::mutex> lk(m);
-            if (running) return false;
-        }
-
-        building = false;   // 冻结图
-
-        // 1) 静态环检测
-        std::map<StepId, std::size_t> indegCopy;
-        std::queue<StepId> seed;
-        for (const auto& kv : nodes) {
-            indegCopy[kv.first] = kv.second.indegree;
-            if (kv.second.indegree == 0) seed.push(kv.first);
-        }
-
-        auto work = indegCopy;
-        std::set<StepId> reachable;
-        while (!seed.empty()) {
-            const StepId id = seed.front();
-            seed.pop();
-            reachable.insert(id);
-            for (StepId down : nodes.at(id).next) {
-                if (--work[down] == 0) seed.push(down);
-            }
-        }
-
-        if (reachable.size() != nodes.size()) {
-            std::vector<StepId> cycle;
-            for (const auto& kv : nodes) {
-                if (!reachable.count(kv.first)) cycle.push_back(kv.first);
-            }
-
-            Error cycleErr{2, "cycle detected"};
-            for (StepId id : cycle) {
-                notify(id, StepState::Pending, Error{});
-                notify(id, StepState::Failed, cycleErr);
-            }
-            return false;
-        }
-
-        // 2) 初始化状态 + 懒创建线程池
-        std::uint64_t generation = 0;
-        std::vector<StepId> roots;
-        bool emptyGraph = false;
-        {
-            std::lock_guard<std::mutex> lk(m);
-            if (running) return false;
-            running = true;
-            generation = resetSchedulerLocked();
-            emptyGraph = nodes.empty();
-
-            if (!emptyGraph && !pool) {
-                const auto threads = cfg.maxConcurrency == 0 ? 1u : cfg.maxConcurrency;
-                pool = std::make_unique<boost::asio::thread_pool>(
-                    static_cast<std::size_t>(threads));
-            }
-
-            for (const auto& kv : indeg) {
-                if (kv.second == 0) roots.push_back(kv.first);
-            }
-
-            if (emptyGraph) running = false;
-        }
-
-        if (emptyGraph) {
-            doneCv.notify_all();
-            return true;
-        }
-
-        // 3) 点火
-        for (StepId id : roots)
-            boost::asio::post(*pool, [this, id, generation] { runStep(id, generation); });
-        return true;
-    }
-
-    void runStep(StepId id, std::uint64_t generation) {
-        if (!beginNode(id, generation)) return;
+        if (!beginNode(id, generation)) continue;
 
         Error err;
         const bool ok = executeNode(id, err);
         Progress progress = ok ? completeSuccess(id) : completeFailure(id);
 
         if (!ok) emitSkipped(progress.skipped, err);
-
-        for (StepId down : progress.ready)
-            boost::asio::post(*pool, [this, down, generation] { runStep(down, generation); });
-
-        if (progress.finished) doneCv.notify_all();
+        for (StepId down : progress.ready) ready.push(down);
+        if (progress.finished) doneCv_.notify_all();
     }
 
-    void Cancel() {
-        std::vector<StepId> cancelledList;
-        std::vector<StepId> skippedList;
-        bool finished = false;
-
-        {
-            std::lock_guard<std::mutex> lk(m);
-            if (!running || cancelled) return;
-            cancelled = true;
-
-            for (const auto& kv : nodes) {
-                const StepId id = kv.first;
-                if (handled.count(id) || runningNodes.count(id)) continue;
-
-                // 入度已归零说明上游全部成功，本来马上能跑 → Cancelled。
-                // 否则被运行中/失败/取消的上游挡住，永远不会再跑 → Skipped。
-                const bool ready = (indeg[id] == 0);
-                handled.insert(id);
-                --pending;
-                (ready ? cancelledList : skippedList).push_back(id);
+    // 环检测：正常 DAG 里每个节点要么执行、要么被跳过。
+    std::vector<StepId> cycle;
+    bool superseded = false;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        superseded = (generation != runGeneration_);
+        if (!superseded) {
+            for (const auto& kv : nodes_) {
+                if (!handled_.count(kv.first)) cycle.push_back(kv.first);
             }
-
-            if (pending == 0) {
-                running = false;
-                finished = true;
-            }
+            running_ = false;
         }
-
-        const Error cancelErr{4, "cancelled"};
-        for (StepId id : cancelledList) {
-            notify(id, StepState::Pending, Error{});
-            notify(id, StepState::Cancelled, cancelErr);
-        }
-        for (StepId id : skippedList) {
-            notify(id, StepState::Pending, Error{});
-            notify(id, StepState::Skipped, cancelErr);
-        }
-
-        if (finished) doneCv.notify_all();
     }
 
-    void Wait() {
-        std::unique_lock<std::mutex> lk(m);
-        doneCv.wait(lk, [this] { return !running; });
+    if (!superseded) {
+        Error cycleErr{2, "cycle detected"};
+        for (StepId id : cycle) {
+            notify(id, StepState::Pending, Error{});
+            notify(id, StepState::Failed, cycleErr);
+        }
+        doneCv_.notify_all();
     }
-
-    Config cfg;
-    bool testMode{false};
-    std::shared_ptr<const Listener> listener;
-    bool building{true};
-
-    StepId nextId{0};
-    std::map<StepId, StepNode> nodes;
-
-    std::mutex m;
-    std::condition_variable doneCv;
-    bool running{false};
-    bool cancelled{false};
-    std::map<StepId, std::size_t> indeg;   // 入度信息表，随节点处理动态变化
-    std::set<StepId> handled;              // 已到达终态或被跳过的节点
-    std::set<StepId> runningNodes;
-    std::size_t pending{0};
-    std::uint64_t runGeneration{0};
-
-    // 最后声明：析构时最先销毁，join 所有 worker
-    std::unique_ptr<boost::asio::thread_pool> pool;
-};
+    return true;
+}
 
 // ---------------------------------------------------------------
-// PipelineImpl：只做转发，没有数据
+// 异步执行
 // ---------------------------------------------------------------
-PipelineImpl::PipelineImpl(const Config& cfg, bool testMode)
-    : impl_(std::make_unique<Impl>(cfg, testMode)) {}
-
-PipelineImpl::~PipelineImpl() {
-    impl_->Cancel();
-    impl_->Wait();
-}
-
-StepId PipelineImpl::AddStep(std::string name, Step fn) {
-    return impl_->AddStep(std::move(name), std::move(fn));
-}
-
-void PipelineImpl::AddDependency(StepId downstream, StepId upstream) {
-    impl_->AddDependency(downstream, upstream);
-}
-
-void PipelineImpl::SetListener(Listener listener) {
-    impl_->SetListener(std::move(listener));
-}
-
-bool PipelineImpl::Run() {
-    return impl_->Run();
-}
-
 bool PipelineImpl::RunAsync() {
-    return impl_->RunAsync();
+    // 测试模式：不启动线程，退化为同步执行
+    if (testMode_) return Run();
+
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        if (running_) return false;
+    }
+
+    building_ = false;   // 冻结图
+
+    // 1) 静态环检测
+    std::map<StepId, std::size_t> indegCopy;
+    std::queue<StepId> seed;
+    for (const auto& kv : nodes_) {
+        indegCopy[kv.first] = kv.second.indegree;
+        if (kv.second.indegree == 0) seed.push(kv.first);
+    }
+
+    auto work = indegCopy;
+    std::set<StepId> reachable;
+    while (!seed.empty()) {
+        const StepId id = seed.front();
+        seed.pop();
+        reachable.insert(id);
+        for (StepId down : nodes_.at(id).next) {
+            if (--work[down] == 0) seed.push(down);
+        }
+    }
+
+    if (reachable.size() != nodes_.size()) {
+        std::vector<StepId> cycle;
+        for (const auto& kv : nodes_) {
+            if (!reachable.count(kv.first)) cycle.push_back(kv.first);
+        }
+
+        Error cycleErr{2, "cycle detected"};
+        for (StepId id : cycle) {
+            notify(id, StepState::Pending, Error{});
+            notify(id, StepState::Failed, cycleErr);
+        }
+        return false;
+    }
+
+    // 2) 初始化状态 + 懒创建线程池
+    std::uint64_t generation = 0;
+    std::vector<StepId> roots;
+    bool emptyGraph = false;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        if (running_) return false;
+        running_ = true;
+        generation = resetSchedulerLocked();
+        emptyGraph = nodes_.empty();
+
+        if (!emptyGraph && !pool_) {
+            const auto threads = cfg_.maxConcurrency == 0 ? 1u : cfg_.maxConcurrency;
+            pool_ = std::make_unique<boost::asio::thread_pool>(
+                static_cast<std::size_t>(threads));
+        }
+
+        for (const auto& kv : indeg_) {
+            if (kv.second == 0) roots.push_back(kv.first);
+        }
+
+        if (emptyGraph) running_ = false;
+    }
+
+    if (emptyGraph) {
+        doneCv_.notify_all();
+        return true;
+    }
+
+    // 3) 点火
+    for (StepId id : roots)
+        boost::asio::post(*pool_, [this, id, generation] { runStep(id, generation); });
+    return true;
+}
+
+void PipelineImpl::runStep(StepId id, std::uint64_t generation) {
+    if (!beginNode(id, generation)) return;
+
+    Error err;
+    const bool ok = executeNode(id, err);
+    Progress progress = ok ? completeSuccess(id) : completeFailure(id);
+
+    if (!ok) emitSkipped(progress.skipped, err);
+
+    for (StepId down : progress.ready)
+        boost::asio::post(*pool_, [this, down, generation] { runStep(down, generation); });
+
+    if (progress.finished) doneCv_.notify_all();
 }
 
 void PipelineImpl::Cancel() {
-    impl_->Cancel();
+    std::vector<StepId> cancelledList;
+    std::vector<StepId> skippedList;
+    bool finished = false;
+
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        if (!running_ || cancelled_) return;
+        cancelled_ = true;
+
+        for (const auto& kv : nodes_) {
+            const StepId id = kv.first;
+            if (handled_.count(id) || runningNodes_.count(id)) continue;
+
+            // 入度已归零说明上游全部成功，本来马上能跑 → Cancelled。
+            // 否则被运行中/失败/取消的上游挡住，永远不会再跑 → Skipped。
+            const bool ready = (indeg_[id] == 0);
+            handled_.insert(id);
+            --pending_;
+            (ready ? cancelledList : skippedList).push_back(id);
+        }
+
+        if (pending_ == 0) {
+            running_ = false;
+            finished = true;
+        }
+    }
+
+    const Error cancelErr{4, "cancelled"};
+    for (StepId id : cancelledList) {
+        notify(id, StepState::Pending, Error{});
+        notify(id, StepState::Cancelled, cancelErr);
+    }
+    for (StepId id : skippedList) {
+        notify(id, StepState::Pending, Error{});
+        notify(id, StepState::Skipped, cancelErr);
+    }
+
+    if (finished) doneCv_.notify_all();
 }
 
 void PipelineImpl::Wait() {
-    impl_->Wait();
+    std::unique_lock<std::mutex> lk(m_);
+    doneCv_.wait(lk, [this] { return !running_; });
 }
 
 std::unique_ptr<Pipeline> Pipeline::Create(const Config& cfg) {

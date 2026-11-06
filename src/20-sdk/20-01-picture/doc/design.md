@@ -68,13 +68,12 @@
 - 限制：在回调里析构 `Pipeline` 会因等待自身而卡住
 - 状态：已实现（阶段 3）
 
-## 9. 抽象接口 + Pimpl
+## 9. 抽象接口（未采用 Pimpl）
 
-- 选择：对外只暴露抽象类 `Pipeline`；`PipelineImpl` 私有头里只有 `struct Impl; std::unique_ptr<Impl>`
-- 实现：节点、容器、锁、条件变量、Boost 线程池全部定义在 `pipeline_impl.cpp` 的 `struct PipelineImpl::Impl` 中
-- 理由：抽象接口解决多实现/契约隔离；Pimpl 解决内部演进不污染头文件
-- 代价：多一层间接与一次堆分配；调试时多看一层
-- 状态：已实现（阶段 4）
+- 选择：对外只暴露抽象类 `Pipeline`；`PipelineImpl` 在私有头中直接持有成员
+- 理由：业务方只 include 公共头，抽象接口已经隔离实现；当前 `pipeline_impl.h` 只被 `pipeline_impl.cpp` 包含，再加一层 `Impl` 的编译隔离收益很小
+- 代价：私有头会暴露 Boost、mutex、容器；如果将来实现拆成多个 `.cpp`，可以再引入 Pimpl
+- 状态：已定（不采用 Pimpl）
 
 ## 10. 执行期禁止改图
 
