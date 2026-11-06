@@ -26,6 +26,12 @@ target_compile_options(picture_qt_demo PRIVATE
     /utf-8
 )
 
+# 和仓库其他示例保持一致：产物放到源码目录的 build/bin。
+# qt_add_executable 不认 EXECUTABLE_OUTPUT_PATH，所以这里直接设目标属性。
+set_target_properties(picture_qt_demo PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/bin
+)
+
 # 自动把 Qt 运行库/插件拷到 exe 旁边，双击即可运行
 if(WIN32)
     get_filename_component(_qt_bin "${Qt6_DIR}/../../../bin" ABSOLUTE)

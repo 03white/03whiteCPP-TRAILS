@@ -9,7 +9,7 @@
 ```powershell
 cmake --preset msvc-release -DCMAKE_PREFIX_PATH=D:/vcpkg/installed/x64-windows
 cmake --build build\msvc-release --target picture_qt_demo
-build\msvc-release\src\20-sdk\20-02-picture-qt\picture_qt_demo.exe
+src\20-sdk\20-02-picture-qt\build\bin\picture_qt_demo.exe
 ```
 
 `windeployqt` 会在构建后把 Qt 运行库和插件（`platforms/qwindows.dll`、`imageformats/*`）拷到 exe 旁边，可以直接双击运行。
