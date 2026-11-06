@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #include "image_pipeline.h"
@@ -139,6 +140,56 @@ TEST(Cancel, BeforeRunIsNoop) {
     ASSERT_TRUE(pipeline->RunAsync());
     pipeline->Wait();
     EXPECT_TRUE(ran);
+}
+
+TEST(Cancel, WorksDuringSyncRun) {
+    auto pipeline = Pipeline::Create();
+    ASSERT_NE(pipeline, nullptr);
+
+    std::mutex m;
+    std::condition_variable cv;
+    bool aStarted = false;
+    bool gate = false;
+
+    Recorder recorder;
+
+    const StepId a = pipeline->AddStep("A", [&] {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            aStarted = true;
+        }
+        cv.notify_all();
+
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [&] { return gate; });
+    });
+    const StepId b = pipeline->AddStep("B", [] {});
+    pipeline->AddDependency(b, a);
+
+    pipeline->SetListener([&recorder](StepId id, StepState state, const Error&) {
+        recorder.on(id, state);
+    });
+
+    std::thread runner([&] { pipeline->Run(); });
+
+    {
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [&] { return aStarted; });
+    }
+
+    pipeline->Cancel();
+
+    {
+        std::lock_guard<std::mutex> lk(m);
+        gate = true;
+    }
+    cv.notify_all();
+
+    runner.join();
+
+    EXPECT_EQ(lastState(recorder, a), StepState::Succeeded);
+    EXPECT_EQ(recorder.get(b),
+              (std::vector<StepState>{StepState::Pending, StepState::Skipped}));
 }
 
 TEST(Cancel, StressRepeatedCancelThenRerun) {

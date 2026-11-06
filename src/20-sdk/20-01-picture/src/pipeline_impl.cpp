@@ -3,6 +3,7 @@
 #include <boost/asio/post.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -72,7 +73,7 @@ bool PipelineImpl::notify(StepId id, StepState state, const Error& err) {
 
 // ---------------------------------------------------------------
 // 执行一个节点：Pending → Running → fn → 终态。
-// 同步循环和异步 runStep 共用，区别只在执行前后的调度状态维护。
+// 同步与异步共用；区别只在执行前后如何维护调度状态。
 // ---------------------------------------------------------------
 bool PipelineImpl::executeNode(StepId id, Error& err) {
     auto fail = [&](const Error& e) {
@@ -101,98 +102,154 @@ bool PipelineImpl::executeNode(StepId id, Error& err) {
 }
 
 // ---------------------------------------------------------------
-// 同步执行：调用线程按拓扑序跑完整张图，回调也在调用线程触发。
+// 调度状态维护：以下函数都在 m_ 保护下操作。
 // ---------------------------------------------------------------
-bool PipelineImpl::Run() {
-    {
-        std::lock_guard<std::mutex> lk(m_);
-        if (running_) return false;
-        running_ = true;
-        asyncRun_ = false;
-        cancelled_ = false;
-        runningNodes_.clear();
-        ++runGeneration_;   // 让上一轮可能残留的异步任务失效
-    }
-
-    building_ = false;   // 冻结图
-
-    // 入度副本
-    std::map<StepId, std::size_t> indeg;
-    std::queue<StepId> ready;
+std::uint64_t PipelineImpl::resetSchedulerLocked() {
+    indeg_.clear();
     for (const auto& kv : nodes_) {
-        indeg[kv.first] = kv.second.indegree_;
-        if (kv.second.indegree_ == 0) ready.push(kv.first);
+        indeg_[kv.first] = kv.second.indegree_;
     }
+    handled_.clear();
+    runningNodes_.clear();
+    pending_ = nodes_.size();
+    cancelled_ = false;
+    return ++runGeneration_;
+}
 
-    std::set<StepId> handled;
-
-    auto skipDownstream = [&](StepId from, const Error& err) {
-        std::queue<StepId> q;
-        for (StepId v : nodes_.at(from).next_) q.push(v);
-        while (!q.empty()) {
-            const StepId v = q.front();
-            q.pop();
-            if (!handled.insert(v).second) continue;
-            notify(v, StepState::Pending, Error{});
-            notify(v, StepState::Skipped, err);
-            for (StepId w : nodes_.at(v).next_) q.push(w);
-        }
-    };
-
-    while (!ready.empty()) {
-        const StepId id = ready.front();
-        ready.pop();
-
-        if (handled.count(id)) continue;
-        handled.insert(id);
-
-        Error err;
-        if (!executeNode(id, err)) {
-            skipDownstream(id, err);
-            continue;
-        }
-
-        for (StepId down : nodes_.at(id).next_) {
-            if (handled.count(down)) continue;
-            if (--indeg[down] == 0) ready.push(down);
-        }
-    }
-
-    // 环检测：正常 DAG 里每个节点要么执行、要么被跳过
-    if (handled.size() != nodes_.size()) {
-        Error cycleErr;
-        cycleErr.code = 2;
-        cycleErr.message = "cycle detected";
-        for (const auto& kv : nodes_) {
-            if (handled.count(kv.first)) continue;
-            notify(kv.first, StepState::Pending, Error{});
-            notify(kv.first, StepState::Failed, cycleErr);
-        }
-    }
-
-    {
-        std::lock_guard<std::mutex> lk(m_);
-        running_ = false;
-    }
-    doneCv_.notify_all();
+bool PipelineImpl::beginNode(StepId id, std::uint64_t generation) {
+    std::lock_guard<std::mutex> lk(m_);
+    if (generation != runGeneration_) return false;   // 上一轮残留的排队任务
+    if (handled_.count(id)) return false;             // 已被 Cancel 标记
+    runningNodes_.insert(id);
     return true;
 }
 
+PipelineImpl::Progress PipelineImpl::completeSuccess(StepId id) {
+    Progress progress;
+    std::lock_guard<std::mutex> lk(m_);
+    runningNodes_.erase(id);
+    handled_.insert(id);
+
+    if (!cancelled_) {
+        for (StepId down : nodes_.at(id).next_) {
+            if (handled_.count(down)) continue;
+            if (--indeg_[down] == 0) progress.ready.push_back(down);
+        }
+    }
+
+    if (--pending_ == 0) {
+        running_ = false;
+        progress.finished = true;
+    }
+    return progress;
+}
+
+PipelineImpl::Progress PipelineImpl::completeFailure(StepId id) {
+    Progress progress;
+    std::lock_guard<std::mutex> lk(m_);
+    runningNodes_.erase(id);
+
+    if (handled_.insert(id).second) --pending_;
+
+    if (!cancelled_) {
+        std::queue<StepId> q;
+        for (StepId v : nodes_.at(id).next_) q.push(v);
+        while (!q.empty()) {
+            const StepId v = q.front();
+            q.pop();
+            if (!handled_.insert(v).second) continue;
+            progress.skipped.push_back(v);
+            --pending_;
+            for (StepId w : nodes_.at(v).next_) q.push(w);
+        }
+    }
+
+    if (pending_ == 0) {
+        running_ = false;
+        progress.finished = true;
+    }
+    return progress;
+}
+
+void PipelineImpl::emitSkipped(const std::vector<StepId>& skipped, const Error& err) {
+    for (StepId v : skipped) {
+        notify(v, StepState::Pending, Error{});
+        notify(v, StepState::Skipped, err);
+    }
+}
+
 // ---------------------------------------------------------------
-// 异步执行：把根节点投递到线程池后立即返回，后续由 worker 接力。
+// 同步执行：调用线程上跑，取消/状态维护与异步共用同一套状态。
 // ---------------------------------------------------------------
-bool PipelineImpl::RunAsync() {
+bool PipelineImpl::Run() {
     std::uint64_t generation = 0;
     {
         std::lock_guard<std::mutex> lk(m_);
         if (running_) return false;
         running_ = true;
-        asyncRun_ = true;
-        cancelled_ = false;
-        runningNodes_.clear();
-        generation = ++runGeneration_;
+        generation = resetSchedulerLocked();
     }
     building_ = false;   // 冻结图
+
+    std::queue<StepId> ready;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        for (const auto& kv : indeg_) {
+            if (kv.second == 0) ready.push(kv.first);
+        }
+    }
+
+    while (!ready.empty()) {
+        const StepId id = ready.front();
+        ready.pop();
+
+        if (!beginNode(id, generation)) continue;
+
+        Error err;
+        const bool ok = executeNode(id, err);
+        Progress progress = ok ? completeSuccess(id) : completeFailure(id);
+
+        if (!ok) emitSkipped(progress.skipped, err);
+        for (StepId down : progress.ready) ready.push(down);
+        if (progress.finished) doneCv_.notify_all();
+    }
+
+    // 环检测：正常 DAG 里每个节点要么执行、要么被跳过。
+    std::vector<StepId> cycle;
+    bool superseded = false;
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        superseded = (generation != runGeneration_);   // 已被新一轮接管
+        if (!superseded) {
+            for (const auto& kv : nodes_) {
+                if (!handled_.count(kv.first)) cycle.push_back(kv.first);
+            }
+            running_ = false;
+        }
+    }
+
+    if (!superseded) {
+        Error cycleErr{2, "cycle detected"};
+        for (StepId id : cycle) {
+            notify(id, StepState::Pending, Error{});
+            notify(id, StepState::Failed, cycleErr);
+        }
+        doneCv_.notify_all();
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------
+// 异步执行：把根节点投递线程池后立即返回，后续由 worker 接力。
+// ---------------------------------------------------------------
+bool PipelineImpl::RunAsync() {
+    {
+        std::lock_guard<std::mutex> lk(m_);
+        if (running_) return false;
+    }
+
+    building_ = false;   // 冻结图
+
     // 1) 静态环检测：异步路径没有“自然结束”，有环就会永远等不到 pending 归零
     std::map<StepId, std::size_t> indeg;
     std::queue<StepId> seed;
@@ -200,6 +257,7 @@ bool PipelineImpl::RunAsync() {
         indeg[kv.first] = kv.second.indegree_;
         if (kv.second.indegree_ == 0) seed.push(kv.first);
     }
+
     auto work = indeg;
     std::set<StepId> reachable;
     while (!seed.empty()) {
@@ -210,127 +268,69 @@ bool PipelineImpl::RunAsync() {
             if (--work[down] == 0) seed.push(down);
         }
     }
+
     if (reachable.size() != nodes_.size()) {
         std::vector<StepId> cycle;
         for (const auto& kv : nodes_) {
             if (!reachable.count(kv.first)) cycle.push_back(kv.first);
         }
-        {
-            std::lock_guard<std::mutex> lk(m_);
-            running_ = false;
-            asyncRun_ = false;
-        }
-        doneCv_.notify_all();
-        Error cycleErr;
-        cycleErr.code = 2;
-        cycleErr.message = "cycle detected";
+
+        Error cycleErr{2, "cycle detected"};
         for (StepId id : cycle) {
             notify(id, StepState::Pending, Error{});
             notify(id, StepState::Failed, cycleErr);
         }
         return false;
     }
-    // 2) 初始化本轮调度状态，线程池懒创建
+
+    // 2) 初始化本轮调度状态 + 懒创建线程池
+    std::uint64_t generation = 0;
     std::vector<StepId> roots;
     bool emptyGraph = false;
     {
         std::lock_guard<std::mutex> lk(m_);
-        indeg_ = std::move(indeg);
-        handled_.clear();
-        runningNodes_.clear();
-        pending_ = nodes_.size();
+        if (running_) return false;   // 环检测期间可能已有别的执行开始
+        running_ = true;
+        generation = resetSchedulerLocked();
         emptyGraph = nodes_.empty();
+
         if (!emptyGraph && !pool_) {
             const auto threads = cfg_.maxConcurrency == 0 ? 1u : cfg_.maxConcurrency;
             pool_ = std::make_unique<boost::asio::thread_pool>(
                 static_cast<std::size_t>(threads));
         }
+
         for (const auto& kv : indeg_) {
             if (kv.second == 0) roots.push_back(kv.first);
         }
-        if (emptyGraph) {
-            running_ = false;
-            asyncRun_ = false;
-        }
+
+        if (emptyGraph) running_ = false;
     }
+
     if (emptyGraph) {
         doneCv_.notify_all();
         return true;
     }
+
     // 3) 点火：提交根节点后立即返回
     for (StepId id : roots)
         boost::asio::post(*pool_, [this, id, generation] { runStep(id, generation); });
     return true;
 }
-// ---------------------------------------------------------------
-// worker 上执行一个步骤，并在结束时把下一批 ready 的步骤提交回池子。
-// ---------------------------------------------------------------
+
 void PipelineImpl::runStep(StepId id, std::uint64_t generation) {
-    {
-        std::lock_guard<std::mutex> lk(m_);
-        if (generation != runGeneration_) return;   // 上一轮残留的排队任务
-        if (handled_.count(id)) return;             // 已被 Cancel 标记，不再执行
-        runningNodes_.insert(id);
-    }
+    if (!beginNode(id, generation)) return;
 
     Error err;
     const bool ok = executeNode(id, err);
+    Progress progress = ok ? completeSuccess(id) : completeFailure(id);
 
-    if (ok) {
-        std::vector<StepId> ready;
-        bool finished = false;
-        {
-            std::lock_guard<std::mutex> lk(m_);
-            runningNodes_.erase(id);
-            handled_.insert(id);
-            if (!cancelled_) {
-                for (StepId down : nodes_.at(id).next_) {
-                    if (handled_.count(down)) continue;
-                    if (--indeg_[down] == 0) ready.push_back(down);
-                }
-            }
-            if (--pending_ == 0) {
-                running_ = false;
-                asyncRun_ = false;
-                finished = true;
-            }
-        }
-        for (StepId down : ready)
-            boost::asio::post(*pool_, [this, down, generation] { runStep(down, generation); });
+    if (!ok) emitSkipped(progress.skipped, err);
 
-        if (finished) doneCv_.notify_all();
-        return;
-    }
-    // 下游全部跳过；pending 必须照常递减，否则 Wait() 永远醒不来
-    std::vector<StepId> skipped;
-    bool finished = false;
-    {
-        std::lock_guard<std::mutex> lk(m_);
-        runningNodes_.erase(id);
-        if (handled_.insert(id).second) --pending_;
-        if (!cancelled_) {
-            std::queue<StepId> q;
-            for (StepId v : nodes_.at(id).next_) q.push(v);
-            while (!q.empty()) {
-                const StepId v = q.front();
-                q.pop();
-                if (!handled_.insert(v).second) continue;
-                skipped.push_back(v);
-                --pending_;
-                for (StepId w : nodes_.at(v).next_) q.push(w);
-            }
-        }
-        if (pending_ == 0) {
-            running_ = false;
-            asyncRun_ = false;
-            finished = true;
-        }
-    }
-    for (StepId v : skipped) {
-        notify(v, StepState::Pending, Error{});
-        notify(v, StepState::Skipped, err);
-    }
-    if (finished) doneCv_.notify_all();
+    for (StepId down : progress.ready)
+        boost::asio::post(*pool_, [this, down, generation] { runStep(down, generation); });
+
+    if (progress.finished) doneCv_.notify_all();
 }
 
 void PipelineImpl::Cancel() {
@@ -340,8 +340,7 @@ void PipelineImpl::Cancel() {
 
     {
         std::lock_guard<std::mutex> lk(m_);
-        // 同步 Run 的调度状态是本地的，暂不支持在其执行期间取消。
-        if (!running_ || !asyncRun_ || cancelled_) return;
+        if (!running_ || cancelled_) return;
         cancelled_ = true;
 
         for (const auto& kv : nodes_) {
@@ -358,7 +357,6 @@ void PipelineImpl::Cancel() {
 
         if (pending_ == 0) {
             running_ = false;
-            asyncRun_ = false;
             finished = true;
         }
     }
