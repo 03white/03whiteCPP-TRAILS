@@ -37,6 +37,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     _WIN32_WINNT=0x0A00
 )
 
-# tests/ 已就绪；example/ 还是空目录，等放入 CMakeLists.txt 和源文件后再打开。
+# tests/ 与 example/ 都已就绪。
 add_subdirectory(tests)
-# add_subdirectory(example)
+add_subdirectory(example)

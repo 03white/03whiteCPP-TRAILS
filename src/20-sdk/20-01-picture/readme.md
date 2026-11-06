@@ -18,6 +18,8 @@
 │   └── c_api.cpp               # C API：不透明句柄 + 错误码
 ├── tests/                      # GTest 用例
 ├── example/
+│   ├── basic.cpp               # 链式六步完整示例
+│   ├── cancel.cpp              # 回调内取消 + 失败传播
 │   └── python_demo.py          # Python ctypes 示例
 ├── doc/
 │   ├── 使用指南.md
@@ -33,7 +35,8 @@
 
 ```powershell
 cmake --preset msvc-debug
-cmake --build build\msvc-debug --target 20-01-picture imgpipe_c imgpipe_tests
+cmake --build build\msvc-debug --target 20-01-picture imgpipe_c imgpipe_tests `
+  imgpipe-example-basic imgpipe-example-cancel
 ```
 
 Python ctypes 示例：
