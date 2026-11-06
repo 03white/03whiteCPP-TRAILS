@@ -5,11 +5,13 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMetaObject>
 #include <QPainter>
+#include <QPen>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
@@ -18,6 +20,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace {
@@ -169,13 +172,34 @@ void MainWindow::startRun() {
     const auto watermark = addStep("4. 水印", [](Job& job) {
         QPainter painter(&job.image);
         painter.setRenderHint(QPainter::Antialiasing);
+
+        // 1) 红色边框：缩放/水印效果一眼可见
+        painter.setPen(QPen(QColor(220, 20, 20), 6));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(job.image.rect().adjusted(3, 3, -3, -3));
+
+        // 2) 右下角水印：半透明黑底 + 白字
         QFont font = painter.font();
-        font.setPointSize(24);
+        font.setPointSize(28);
         font.setBold(true);
         painter.setFont(font);
-        painter.setPen(QColor(255, 255, 255, 220));
-        painter.drawText(job.image.rect().adjusted(16, 16, -16, -16),
-                         Qt::AlignRight | Qt::AlignBottom, "imgpipe");
+
+        const QString text = "imgpipe";
+        const QFontMetrics metrics(font);
+        const int textWidth = metrics.horizontalAdvance(text);
+        const int textHeight = metrics.height();
+        const int margin = 16;
+
+        const int x = std::max(margin, job.image.width() - textWidth - margin * 2);
+        const int y = std::max(margin, job.image.height() - textHeight - margin);
+        const QRect textRect(x, y, textWidth + margin * 2, textHeight + margin);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0, 140));
+        painter.drawRoundedRect(textRect, 8, 8);
+
+        painter.setPen(Qt::white);
+        painter.drawText(textRect, Qt::AlignCenter, text);
         painter.end();
     });
 
