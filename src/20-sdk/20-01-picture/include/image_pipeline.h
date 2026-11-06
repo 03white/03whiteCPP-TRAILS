@@ -5,7 +5,8 @@
 #include <string>
 
 namespace imgpipe {
-class PipelineImpl;
+
+
 enum class StepState{
     Pending,
     Running,
@@ -32,6 +33,8 @@ using Listener = std::function<void(StepId, StepState, const Error&)>;
 class Pipeline{
 public:
     static std::unique_ptr<Pipeline> Create(const Config& cfg={});
+    // 测试专用：不启动线程，RunAsync 退化为同步执行，回调在调用线程触发。
+    static std::unique_ptr<Pipeline> CreateForTest();
     virtual ~Pipeline()=default;
     virtual StepId AddStep(std::string name,Step fn)=0;
     virtual void   AddDependency(StepId downstream,StepId upstream)=0;

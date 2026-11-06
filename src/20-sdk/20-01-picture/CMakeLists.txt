@@ -1,7 +1,7 @@
 project(20-01-picture)
 
-# 物不落在 和全仓其它专题保持一致：产build/<preset> 的深层目录里。
-set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build/lib)
+# 产物放在各自构建目录下，避免 msvc-debug / msvc-asan 等配置互相覆盖。
+set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib)
 
 # 业务代码全部编译进静态库，对外只暴露 include/ 下的头文件。
 # PUBLIC 让使用方（example/tests）自动拿到 include 路径，不必再手写。

@@ -79,6 +79,6 @@ ctest --test-dir build\msvc-debug --output-on-failure -R "Smoke|Topology|Error|L
 | --- | --- | --- |
 | 1 | 建图、拓扑排序、同步 `Run`、环检测 | 完成 |
 | 2 | 线程池、异步 `RunAsync`、`Wait` | 完成 |
-| 3 | 取消、生命周期、并发压测 | 完成（TSan/ASan 待接入） |
-| 4 | Pimpl 拆分、`CreateForTest` / Mock | 待开始 |
+| 3 | 取消、生命周期、并发压测 | 完成（ASan 全量通过；TSan 需 Clang，当前环境不可用） |
+| 4 | Pimpl 拆分、`CreateForTest` / Mock | 完成 |
 | 5 | C API | 可选 |

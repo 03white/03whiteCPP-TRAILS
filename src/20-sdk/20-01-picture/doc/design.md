@@ -70,18 +70,26 @@
 
 ## 9. 抽象接口 + Pimpl
 
-- 选择：对外只暴露抽象类 `Pipeline`；实现类 `PipelineImpl` 在私有头中
-- 后续：阶段 4 在 `PipelineImpl` 内再加 `struct Impl; std::unique_ptr<Impl>`，把数据结构与线程原语彻底移出头文件
-- 理由：抽象接口解决多实现/契约隔离；Pimpl 解决内部演进不污染私有头
+- 选择：对外只暴露抽象类 `Pipeline`；`PipelineImpl` 私有头里只有 `struct Impl; std::unique_ptr<Impl>`
+- 实现：节点、容器、锁、条件变量、Boost 线程池全部定义在 `pipeline_impl.cpp` 的 `struct PipelineImpl::Impl` 中
+- 理由：抽象接口解决多实现/契约隔离；Pimpl 解决内部演进不污染头文件
 - 代价：多一层间接与一次堆分配；调试时多看一层
-- 状态：抽象接口已实现，Pimpl 待阶段 4
+- 状态：已实现（阶段 4）
 
 ## 10. 执行期禁止改图
 
-- 选择：`building_` 标志；`Run`/`RunAsync` 开始后 `AddStep`/`AddDependency` 抛 `std::logic_error`
-- 理由：执行期间修改 `nodes_` 会导致迭代器失效与数据竞争；运行时检测比文档约定可靠
+- 选择：`building` 标志；`Run`/`RunAsync` 开始后 `AddStep`/`AddDependency` 抛 `std::logic_error`
+- 理由：执行期间修改 `nodes` 会导致迭代器失效与数据竞争；运行时检测比文档约定可靠
 - 代价：需要在构图与执行之间明确分界
 - 状态：已定（阶段 1）
+
+## 11. `CreateForTest()` / Mock
+
+- 选项：独立 `MockPipeline` / 复用 `PipelineImpl` + 测试模式
+- 选择：复用同一实现，`testMode` 下 `RunAsync()` 直接调用同步 `Run()`，不创建线程池
+- 理由：建图、调度、错误传播、取消只有一套代码，Mock 与真实实现不会行为分叉
+- 代价：`Impl` 内多一个模式判断
+- 状态：已实现（阶段 4）
 
 ## 附：线程池选型
 
