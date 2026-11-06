@@ -9,12 +9,16 @@
 
 ```
 20-01-picture/
-├── include/image_pipeline.h   # 对外接口（唯一公开头）
+├── include/
+│   ├── image_pipeline.h        # 对外 C++ 接口
+│   └── image_pipeline_c.h      # 对外 C API
 ├── src/
-│   ├── pipeline_impl.h        # 实现类声明
-│   └── pipeline_impl.cpp      # 建图、同步/异步调度、线程池
-├── tests/                     # GTest 用例
-├── example/                   # 示例（待补充）
+│   ├── pipeline_impl.h         # 只剩 struct Impl 前向声明
+│   ├── pipeline_impl.cpp       # 建图、同步/异步调度、线程池（全部实现细节）
+│   └── c_api.cpp               # C API：不透明句柄 + 错误码
+├── tests/                      # GTest 用例
+├── example/
+│   └── python_demo.py          # Python ctypes 示例
 ├── doc/
 │   ├── 使用指南.md
 │   ├── 接口异步化调研.md
@@ -29,7 +33,14 @@
 
 ```powershell
 cmake --preset msvc-debug
-cmake --build build\msvc-debug --target 20-01-picture imgpipe_tests
+cmake --build build\msvc-debug --target 20-01-picture imgpipe_c imgpipe_tests
+```
+
+Python ctypes 示例：
+
+```powershell
+python src/20-sdk/20-01-picture/example/python_demo.py `
+  build/msvc-debug/src/20-sdk/20-01-picture/bin/imgpipe.dll
 ```
 
 > MinGW 预设可用 `mingw-debug`；Boost 组件需已通过 vcpkg 安装。
@@ -81,4 +92,4 @@ ctest --test-dir build\msvc-debug --output-on-failure -R "Smoke|Topology|Error|L
 | 2 | 线程池、异步 `RunAsync`、`Wait` | 完成 |
 | 3 | 取消、生命周期、并发压测 | 完成（ASan 全量通过；TSan 需 Clang，当前环境不可用） |
 | 4 | Pimpl 拆分、`CreateForTest` / Mock | 完成 |
-| 5 | C API | 可选 |
+| 5 | C API、Python ctypes demo | 完成 |

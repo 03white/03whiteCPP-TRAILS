@@ -91,6 +91,15 @@
 - 代价：`Impl` 内多一个模式判断
 - 状态：已实现（阶段 4）
 
+## 12. C API 的边界
+
+- 选择：`extern "C"` + 不透明句柄 `imgpipe_handle*`；C 层不抛异常，失败用返回码/回调错误表达
+- 实现：`c_api.cpp` 内部包住 C++ `Pipeline`，`AddStep` 把 C 函数指针 + `user_data` 包成 `std::function`
+- 理由：跨语言/跨编译器稳定；异常不能跨越 C ABI；句柄让 C 侧完全看不到实现
+- 代价：需要手动管理句柄生命周期；错误信息只能通过回调即时读取
+- 导出：Windows 下用 `__declspec(dllexport)`，只导出 `imgpipe_*`
+- 状态：已实现（阶段 5）
+
 ## 附：线程池选型
 
 - 选择：Boost.Asio `boost::asio::thread_pool`（vcpkg，header-only），懒创建，大小取 `Config::maxConcurrency`

@@ -18,6 +18,17 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
 find_package(Boost CONFIG REQUIRED COMPONENTS asio system)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::asio Boost::system)
 
+# ---- 阶段 5：C API（共享库，导出 imgpipe_* 符号）----
+add_library(imgpipe_c SHARED src/c_api.cpp)
+target_link_libraries(imgpipe_c PRIVATE ${PROJECT_NAME})
+target_compile_features(imgpipe_c PRIVATE cxx_std_17)
+target_compile_options(imgpipe_c PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
+set_target_properties(imgpipe_c PROPERTIES
+    OUTPUT_NAME imgpipe
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
+)
+
 # Asio 会 include windows.h：显式给目标平台版本，避免 "Please define _WIN32_WINNT"；
 # NOMINMAX/WIN32_LEAN_AND_MEAN 防止 windows.h 的 min/max 宏污染 std::min/std::max。
 target_compile_definitions(${PROJECT_NAME} PRIVATE
